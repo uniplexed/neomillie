@@ -1,0 +1,6 @@
+# The core with RD_WAIT 8. Inside the tAA budget by 1.5 ns: the configuration benches run in by default.
+
+source ../neogeo_core.qsf
+
+set_global_assignment -name VERILOG_MACRO "NEOGEO_RD_WAIT=8"
+set_global_assignment -name VERILOG_MACRO "NEOGEO_READY_COMB=1"

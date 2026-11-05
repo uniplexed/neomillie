@@ -1,0 +1,13 @@
+# Pocket memory self-test (rtl/test/memtest.sv), RD_WAIT 8. synth/memtest7 builds the same with 7.
+
+source ../pocket_common.qsf
+
+set_global_assignment -name VERILOG_FILE ../../rtl/test/memtest_top.v
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/test/memtest.sv
+set_global_assignment -name VERILOG_FILE ../../upstream/core-template/src/fpga/core/core_bridge_cmd.v
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/pocket_mem_mux.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/sdram_ctrl.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/cram_ctrl.sv
+set_global_assignment -name QIP_FILE ../../rtl/pocket/pll_pocket.qip
+set_global_assignment -name SDC_FILE ../neogeo/pocket.sdc
+set_global_assignment -name SDC_FILE ../memtest/memtest.sdc

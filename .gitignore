@@ -1,0 +1,18 @@
+# Quartus build products
+synth/**/db/
+synth/**/incremental_db/
+synth/**/output_files/
+synth/**/*.log
+synth/**/*.qws
+synth/**/*.rpt
+synth/**/*.summary
+synth/**/c5_pin_model_dump.txt
+# Local tooling and build products
+tools/oss-cad-suite/
+build/
+dist/
+
+# Simulation build products
+sim/**/obj_dir/
+*.vcd
+*.fst

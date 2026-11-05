@@ -1,0 +1,6 @@
+# The core with RD_WAIT 6. Mazamars312's sample point, about 19 ns under the tAA budget on paper. MemTest6 passed on one Pocket.
+
+source ../neogeo_core.qsf
+
+set_global_assignment -name VERILOG_MACRO "NEOGEO_RD_WAIT=6"
+set_global_assignment -name VERILOG_MACRO "NEOGEO_READY_COMB=1"

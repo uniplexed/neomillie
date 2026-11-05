@@ -1,0 +1,6 @@
+# The Neo Geo CD core as released: RD_WAIT 8, as the cartridge core.
+
+source ../neogeocd_core.qsf
+
+set_global_assignment -name VERILOG_MACRO "NEOGEO_RD_WAIT=8"
+set_global_assignment -name VERILOG_MACRO "NEOGEO_READY_COMB=1"

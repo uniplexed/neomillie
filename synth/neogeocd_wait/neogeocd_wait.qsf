@@ -1,0 +1,9 @@
+# The Neo Geo CD core with RD_WAIT 8 and the 68K wait counter (rtl/test/wait_counter.sv): the gate of PROG RAM
+# in CRAM0, read on the Pocket. A debug core.
+
+source ../neogeocd_core.qsf
+
+set_global_assignment -name VERILOG_MACRO "NEOGEO_RD_WAIT=8"
+set_global_assignment -name VERILOG_MACRO "NEOGEO_READY_COMB=1"
+set_global_assignment -name VERILOG_MACRO "NEOGEO_WAIT_COUNTER"
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/test/wait_counter.sv

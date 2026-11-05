@@ -1,0 +1,21 @@
+# Neo Geo CD core for the Analogue Pocket: what neogeocd, neogeocd7 and neogeocd6 share.
+# The cartridge core's files, with NEOGEO_CD, MiSTer's CD files and the Pocket's CD host.
+
+source ../neogeo_core.qsf
+
+set_global_assignment -name VERILOG_MACRO "NEOGEO_CD=1"
+
+# MiSTer RTL, per cd.qip without hps_ext.v (the HPS channel) and CEGen.vhd. cd.sv and lc8951.v are the copies under
+# rtl/cd, with their POCKET edits; the other two are the submodule's
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cd.sv
+set_global_assignment -name VERILOG_FILE ../../rtl/cd/lc8951.v
+set_global_assignment -name VERILOG_FILE ../../upstream/NeoGeo_MiSTer/rtl/cd/drive.v
+set_global_assignment -name VERILOG_FILE ../../upstream/NeoGeo_MiSTer/rtl/cd/cdda.v
+
+# Core. cdd_drive.sv holds the package of cd_defs.svh: it stays ahead of cd_host.sv, cd_mount.sv and
+# cd_fetch.sv, added by the tasks that create them
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cdd_drive.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cd_fix_sram.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cd_host.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cd_mount.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cd_fetch.sv

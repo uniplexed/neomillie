@@ -1,0 +1,9 @@
+# Quartus file list for pll_pocket (paths relative to this file).
+# altera_pll_reconfig_top/core are Intel files taken from the pinned NeoGeo_MiSTer submodule.
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "pll_pocket.sv"]
+set_global_assignment -name SYSTEMVERILOG_FILE [file join $::quartus(qip_path) "pll_mvs_cfg.sv"]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) "pll_pocket_0002.v"]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) "../../upstream/NeoGeo_MiSTer/sys/pll_cfg/altera_pll_reconfig_top.v"]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) "../../upstream/NeoGeo_MiSTer/sys/pll_cfg/altera_pll_reconfig_core.v"]
+set_instance_assignment -name PLL_COMPENSATION_MODE DIRECT -to "*pll_pocket_0002*|altera_pll:altera_pll_i*|*"
+set_instance_assignment -name UNFORCE_MERGE_PLL_OUTPUT_COUNTER ON -to "*pll_pocket_0002*|altera_pll:altera_pll_i*|*"

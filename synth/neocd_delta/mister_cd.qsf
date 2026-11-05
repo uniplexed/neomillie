@@ -1,0 +1,8 @@
+# Synthesis-only: MiSTer Neo Geo CD block (cd_sys: LC8951, drive, CDDA, sector cache) on the Pocket device.
+set_global_assignment -name FAMILY "Cyclone V"
+set_global_assignment -name DEVICE 5CEBA4F23C8
+set_global_assignment -name TOP_LEVEL_ENTITY cd_sys
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files/mister_cd
+set_global_assignment -name VHDL_INPUT_VERSION VHDL_2008
+set_global_assignment -name QIP_FILE ../../upstream/NeoGeo_MiSTer/rtl/cd/cd.qip
+set_global_assignment -name VERILOG_FILE ../../upstream/NeoGeo_MiSTer/rtl/mem/dpram.v

@@ -1,0 +1,7 @@
+# Hand-written. disc.bin picked as a raw BIN: MODE1 sync at byte 0, one data track of the whole file, file 0
+# (the picked file itself), 56 sectors = disc_size / 2352.
+present 1
+tracks 1
+end 56
+# track audio file start stop file_lba
+0 0 0 0 56 0

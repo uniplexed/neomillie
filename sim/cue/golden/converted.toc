@@ -1,0 +1,12 @@
+# Hand-written. tools/cd_convert.py of a 32-sector 2,048-byte data track, a 10-sector audio BIN behind
+# PREGAP 00:02:00 (150) and a 12-sector audio BIN with INDEX 00 at 0 and INDEX 01 at 2: conv.bin of 54
+# sectors, CUE INDEX 01 00:00:00 / PREGAP 00:02:00, INDEX 01 00:00:32 / INDEX 00 00:00:42, INDEX 01 00:00:44.
+# Track 2 starts at 32 + 150; track 2 ends at its successor's INDEX 00 + 150 = 192; track 3 starts at
+# 44 + 150; the last ends at 54 + 150.
+present 1
+tracks 3
+end 204
+# track audio file start stop file_lba
+0 0 1 0 182 0
+1 1 1 182 192 32
+2 1 1 194 204 44

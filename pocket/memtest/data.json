@@ -1,0 +1,52 @@
+{
+    "data": {
+        "magic": "APF_VER_1",
+        "data_slots": [
+            {
+                "name": "Test file CRAM0",
+                "id": 1,
+                "required": true,
+                "parameters": 0,
+                "filename": "memtest_cram0.bin",
+                "extensions": ["bin"],
+                "size_exact": 0,
+                "size_maximum": 131072,
+                "address": "0x10000000"
+            },
+            {
+                "name": "Test file CRAM1",
+                "id": 2,
+                "required": true,
+                "parameters": 0,
+                "filename": "memtest_cram1.bin",
+                "extensions": ["bin"],
+                "size_exact": 0,
+                "size_maximum": 131072,
+                "address": "0x20000000"
+            },
+            {
+                "name": "Test file SDRAM",
+                "id": 3,
+                "required": true,
+                "parameters": 0,
+                "filename": "memtest_sdram.bin",
+                "extensions": ["bin"],
+                "size_exact": 0,
+                "size_maximum": 131072,
+                "address": "0x40000000"
+            },
+            {
+                "name": "Results",
+                "id": "0x101",
+                "required": false,
+                "parameters": 34,
+                "nonvolatile": true,
+                "filename": "memtest.sav",
+                "extensions": ["sav"],
+                "size_exact": null,
+                "size_maximum": 4096,
+                "address": "0x60000000"
+            }
+        ]
+    }
+}

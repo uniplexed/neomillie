@@ -1,0 +1,12 @@
+# Hand-written. gapless.bin, 52 sectors: data 0-31, audio 32-41, audio 42-51, no gap sectors in the BIN.
+# CUE: INDEX 01 00:00:00 / PREGAP 00:00:02, INDEX 01 00:00:32 / PREGAP 00:00:02, INDEX 01 00:00:42.
+# PREGAP is on the disc and not in the BIN, cumulative: start = INDEX 01 + PREGAP so far (2, then 4);
+# file_lba = INDEX 01 as written. With no INDEX 00 a track ends at the next start. The last ends at the
+# BIN's 52 sectors + 4.
+present 1
+tracks 3
+end 56
+# track audio file start stop file_lba
+0 0 1 0 34 0
+1 1 1 34 46 32
+2 1 1 46 56 42

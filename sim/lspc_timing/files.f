@@ -1,0 +1,14 @@
+upstream/NeoGeo_MiSTer/rtl/video/lspc2_a2.v
+upstream/NeoGeo_MiSTer/rtl/video/lspc2_clk.v
+upstream/NeoGeo_MiSTer/rtl/video/lspc_regs.v
+upstream/NeoGeo_MiSTer/rtl/video/lspc_timer.v
+upstream/NeoGeo_MiSTer/rtl/video/videosync.v
+upstream/NeoGeo_MiSTer/rtl/video/slow_cycle.v
+upstream/NeoGeo_MiSTer/rtl/video/fast_cycle.v
+upstream/NeoGeo_MiSTer/rtl/video/autoanim.v
+upstream/NeoGeo_MiSTer/rtl/video/hshrink.v
+upstream/NeoGeo_MiSTer/rtl/video/irq.v
+upstream/NeoGeo_MiSTer/rtl/io/clocks.v
+upstream/NeoGeo_MiSTer/rtl/io/resetp.v
+upstream/NeoGeo_MiSTer/rtl/io/register.v
+upstream/NeoGeo_MiSTer/rtl/cells/bd3.v

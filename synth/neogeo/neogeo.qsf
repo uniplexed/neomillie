@@ -1,0 +1,8 @@
+# The released core. RD_WAIT 8 meets the tAA budget, and on the wait counter 7 gave the 68K no gain over it.
+# The Z80's word buffer took Metal Slug X's lost 68K clocks from 2.019% to 1.354% (docs/hw-tests.md).
+
+source ../neogeo_core.qsf
+
+set_global_assignment -name VERILOG_MACRO "NEOGEO_RD_WAIT=8"
+set_global_assignment -name VERILOG_MACRO "NEOGEO_READY_COMB=1"
+set_global_assignment -name VERILOG_MACRO "NEOGEO_Z80_WORD_BUF=1"

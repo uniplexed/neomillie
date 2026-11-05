@@ -1,0 +1,10 @@
+# Hand-written. disc.bin of make_test_disc.py --data-sectors 300: data 0-299, INDEX 00 at 300, INDEX 01 at
+# 302, INDEX 00 at 312, INDEX 01 at 314, 324 sectors in all: the last stop and the disc's end are the 324
+# sectors the size probe finds.
+present 1
+tracks 3
+end 324
+# track audio file start stop file_lba
+0 0 1 0 300 0
+1 1 1 302 312 302
+2 1 1 314 324 314

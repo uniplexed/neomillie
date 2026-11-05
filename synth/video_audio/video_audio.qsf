@@ -1,0 +1,12 @@
+# Synthesis-only fit of rtl/pocket/video_out.sv and audio_i2s.sv on the Pocket device with virtual
+# pins, to measure their cost and timing alone (Tasks 7 and 8). Not a bitstream.
+set_global_assignment -name FAMILY "Cyclone V"
+set_global_assignment -name DEVICE 5CEBA4F23C8
+set_global_assignment -name TOP_LEVEL_ENTITY fit_top
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name SYSTEMVERILOG_FILE fit_top.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/video_out.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/audio_i2s.sv
+set_global_assignment -name SDC_FILE video_audio.sdc
+set_instance_assignment -name VIRTUAL_PIN ON -to v_*
+set_instance_assignment -name VIRTUAL_PIN ON -to a_*

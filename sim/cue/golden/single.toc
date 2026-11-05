@@ -1,0 +1,12 @@
+# Hand-written. disc.bin of make_test_disc.py, 56 sectors: data 0-31; audio behind INDEX 00 gaps of 2 sectors.
+# Reference CUE: INDEX 01 00:00:00 / INDEX 00 00:00:32, INDEX 01 00:00:34 / INDEX 00 00:00:44, INDEX 01 00:00:46.
+# No PREGAP, so start = INDEX 01 and file_lba = INDEX 01; a track ends at the next track's INDEX 00; the
+# last ends at the BIN's 56 sectors. Used by test_cue_single_bin, test_cue_crlf_and_quoted_spaces,
+# test_cue_malformed_lines_skipped and the 9,408-byte CUE of test_cue_too_long_reports_no_disc.
+present 1
+tracks 3
+end 56
+# track audio file start stop file_lba
+0 0 1 0 32 0
+1 1 1 34 44 34
+2 1 1 46 56 46

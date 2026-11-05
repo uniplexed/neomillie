@@ -1,0 +1,4 @@
+# "No disc": the mount completes with nothing present.
+present 0
+tracks 0
+end 0

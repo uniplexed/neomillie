@@ -1,0 +1,30 @@
+# Neo Geo cartridge core for the Analogue Pocket: what neogeo, neogeo8 and neogeo6 share.
+
+source ../pocket_common.qsf
+
+# MiSTer RTL, per files.qip without rtl/mem/dram.qip (ddram, sdram_mux, sdram) and without cd.qip
+set_global_assignment -name QIP_FILE ../../upstream/NeoGeo_MiSTer/rtl/jt12/target/quartus/jt10.qip
+set_global_assignment -name QIP_FILE ../../upstream/NeoGeo_MiSTer/rtl/jt49/syn/quartus/jt49.qip
+set_global_assignment -name QIP_FILE ../../upstream/NeoGeo_MiSTer/rtl/video/video.qip
+set_global_assignment -name QIP_FILE ../../upstream/NeoGeo_MiSTer/rtl/io/io.qip
+set_global_assignment -name QIP_FILE ../../upstream/NeoGeo_MiSTer/rtl/cells/cells.qip
+set_global_assignment -name QIP_FILE ../../upstream/NeoGeo_MiSTer/rtl/mem/bram.qip
+set_global_assignment -name QIP_FILE ../../upstream/NeoGeo_MiSTer/rtl/cpu/FX68K/fx68k.qip
+set_global_assignment -name QIP_FILE ../../upstream/NeoGeo_MiSTer/rtl/cpu/T80/T80.qip
+set_global_assignment -name VERILOG_FILE ../../upstream/NeoGeo_MiSTer/rtl/cpu/cpu_z80.v
+set_global_assignment -name VERILOG_FILE ../../upstream/NeoGeo_MiSTer/rtl/cpu/cpu_68k.v
+set_global_assignment -name SYSTEMVERILOG_FILE ../../upstream/NeoGeo_MiSTer/sys/video_cleaner.sv
+
+# Core
+set_global_assignment -name VERILOG_FILE ../../rtl/top/core_top.v
+set_global_assignment -name VERILOG_FILE ../../upstream/core-template/src/fpga/core/core_bridge_cmd.v
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/top/neogeo_pocket.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/apf_loader.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/video_out.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/audio_i2s.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/pocket_mem_mux.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/sdram_ctrl.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/cram_ctrl.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/sram_ctrl.sv
+set_global_assignment -name QIP_FILE ../../rtl/pocket/pll_pocket.qip
+set_global_assignment -name SDC_FILE ../neogeo/pocket.sdc

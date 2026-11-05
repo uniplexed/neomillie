@@ -1,0 +1,6 @@
+[submodule "upstream/NeoGeo_MiSTer"]
+	path = upstream/NeoGeo_MiSTer
+	url = https://github.com/MiSTer-devel/NeoGeo_MiSTer
+[submodule "upstream/core-template"]
+	path = upstream/core-template
+	url = https://github.com/open-fpga/core-template

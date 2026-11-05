@@ -1,0 +1,2021 @@
+# Reset state: STOP with 10 of latency, then NO_DISC. IDLE answers the same word above latency 3
+reset
+cmd a000000000
+tick
+tick
+tick
+cmd a000000000
+tick
+tick
+tick
+tick
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+# TRAY_CLOSE without a disc, the TOC of nothing, PLAY of nothing
+cmd e00000000c
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd 5000003002
+cmd 4000004002
+cmd 3000005002
+cmd 2000006002
+cmd 2000105002
+cmd e061200003
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 6000002002
+cmd a000000000
+cmd 9000000001
+tick
+tick
+cmd a000000000
+# A disc: status STOP, and the reset at the next command
+disc 1
+tick
+tick
+cmd a000000000
+tick
+tick
+tick
+tick
+# TRAY_CLOSE with a disc
+cmd e00000000c
+tick
+tick
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+# TOC 0 to 6, sub-commands past them, TOC 5 for each track, the one past the end and past that
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd 5000003002
+cmd 4000004002
+cmd 3000005002
+cmd 2000006002
+cmd 1000007002
+cmd 900000f002
+cmd a000000000
+cmd 2000105002
+cmd 1000205002
+cmd 0000305002
+cmd f000405002
+cmd e000505002
+cmd d000515002
+cmd 1000995002
+cmd 4000f05002
+cmd a000000000
+# IDLE in each of its stat[1] cases
+cmd 8000000002
+cmd a000000000
+cmd 7000001002
+cmd a000000000
+cmd 6000002002
+cmd a000000000
+cmd 5000003002
+cmd a000000000
+cmd 4000004002
+cmd a000000000
+cmd 3000005002
+cmd a000000000
+cmd 2000006002
+cmd a000000000
+# PLAY into the data track, IDLE above and below latency 3
+cmd e061200003
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+tick
+tick
+tick
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+tick
+cmd 7000001002
+tick
+cmd 6000002002
+tick
+cmd 5000003002
+tick
+cmd 4000004002
+tick
+cmd 1000205002
+tick
+cmd 2000006002
+tick
+cmd a000000000
+# PAUSE, RESUME
+cmd 4000000006
+tick
+tick
+tick
+cmd a000000000
+cmd 3000000007
+tick
+tick
+tick
+cmd a000000000
+# SEEK far, the latency term non-zero, to PAUSE, then near, then past the end of the disc
+cmd 2000040004
+cmd a000000000
+tick
+tick
+tick
+cmd a000000000
+tick
+tick
+tick
+cmd a000000000
+cmd c052300004
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 5000000104
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd a000000000
+# PLAY past the end: END once the latency has gone
+cmd 6000000103
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 7000001002
+cmd 6000002002
+cmd a000000000
+# PLAY at 165:165:165, nibbles that are not BCD
+cmd d0ffffff03
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd a000000000
+cmd 9000000001
+tick
+# PLAY at 00:00:00: LBA -150, a position below the start of the disc
+cmd 4000200004
+tick
+tick
+cmd 7000000003
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd a000000000
+# PLAY across the data and audio boundary, and audio to audio
+cmd b051510003
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 7000001002
+cmd 6000002002
+cmd a000000000
+cmd 9004820003
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd a000000000
+# PAUSE and RESUME in audio
+cmd 4000000006
+tick
+tick
+cmd 3000000007
+tick
+tick
+tick
+tick
+cmd a000000000
+# FW_SCAN across tracks and past the end, then the scans at the end
+cmd 1000410004
+tick
+tick
+tick
+cmd 2000000008
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 7000001002
+cmd 6000002002
+cmd 2000000008
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 2000000008
+tick
+tick
+tick
+cmd a000000000
+cmd 1000000009
+tick
+tick
+tick
+cmd a000000000
+# RW_SCAN across tracks and to the start of the disc
+cmd 4052920004
+tick
+tick
+tick
+cmd 1000000009
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 7000001002
+cmd 6000002002
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 7000001002
+cmd 6000002002
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+tick
+tick
+# RW_SCAN from below the start of the disc
+cmd 6000000004
+tick
+tick
+cmd 1000000009
+tick
+tick
+cmd a000000000
+cmd 9000000001
+tick
+# TRACK_PLAY of each track, of 0, past the end and past that
+cmd e00000100b
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd a000000000
+cmd d00000200b
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd a000000000
+cmd c00000300b
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd a000000000
+cmd f00000000b
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd a000000000
+cmd b00000400b
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd a000000000
+cmd a00000500b
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd a000000000
+cmd 600000360b
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd a000000000
+cmd 000000f00b
+tick
+tick
+tick
+# TRACK_MOVE, STOP
+cmd d00000200b
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd 000000000a
+tick
+tick
+cmd a000000000
+cmd 6000002002
+cmd 9000000001
+tick
+tick
+cmd a000000000
+cmd 4000004002
+tick
+tick
+cmd a000000000
+cmd 9000000001
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+# TRAY_OPEN and TRAY_CLOSE
+cmd d00000000d
+tick
+tick
+cmd a000000000
+cmd 8000000002
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd e00000000c
+tick
+tick
+cmd a000000000
+# A bad check nibble: neogeocd.cpp ignores SetCommand's answer
+cmd 1000000006
+tick
+cmd c000000001
+tick
+cmd 1000004002
+tick
+cmd 9005800004
+cmd f000000000
+tick
+tick
+cmd 6000000007
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+# Codes with no command, and the 0xFF of a reset coming from the host
+cmd 5000000005
+cmd c00000000e
+cmd b00000000f
+cmd a00000001f
+tick
+tick
+cmd a000000000
+cmd 00000000ff
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+# The core's reset in PLAY
+cmd 2003200003
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+reset
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+# One data track
+disc 2
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd e00000000c
+tick
+tick
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd 5000003002
+cmd 4000004002
+cmd 2000105002
+cmd 1000205002
+cmd 0000305002
+cmd b004800003
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd a000000000
+cmd 8052700004
+tick
+tick
+cmd 2000000008
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 6000002002
+cmd a000000000
+cmd c052300004
+tick
+tick
+cmd 1000000009
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd d00000200b
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 6000002002
+cmd a000000000
+# An audio track with a pregap: the position in the gap, the sends there, the scans out of it
+disc 3
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd e00000000c
+tick
+tick
+cmd 1000205002
+cmd 8000000002
+cmd f002510003
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd a000000000
+cmd 9051710003
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd a000000000
+cmd a005610004
+tick
+tick
+cmd 2000000008
+tick
+tick
+cmd a000000000
+cmd 6000002002
+cmd a000000000
+cmd 6053710004
+tick
+tick
+cmd 1000000009
+tick
+tick
+cmd a000000000
+cmd 6000002002
+cmd a000000000
+# The disc is gone: NO_DISC, and the TOC with it
+disc 0
+tick
+tick
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 4000004002
+cmd 5000003002
+cmd e00000000c
+tick
+tick
+cmd a000000000
+cmd 2000000008
+tick
+tick
+cmd a000000000
+cmd 1000000009
+tick
+tick
+cmd a000000000
+cmd 7000001002
+cmd 6000002002
+cmd 9000000001
+tick
+# The three tracks again, and 400 idle ticks in PLAY to the end of the disc
+disc 1
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd c000830003
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd a000000000
+# 12 tracks: TOC 4, TOC 5 of tracks 9 to 12 and past them, the TOC's other answers
+disc 4
+tick
+cmd a000000000
+cmd 4000004002
+cmd 2000905002
+cmd 2000015002
+cmd 2000115002
+cmd 2000215002
+cmd 2000315002
+cmd 8000000002
+cmd 7000001002
+cmd 6000002002
+cmd 5000003002
+cmd 3000005002
+# TRACK_PLAY of track 11, then TOC 2, through the sends and across into track 12, then past the end
+cmd e00000110b
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd 6000002002
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd 6000002002
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd 6000002002
+cmd 8000000002
+cmd 7000001002
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd 6000002002
+cmd a000000000
+# TRACK_PLAY of track 9, across 9 to 10: the digit carries
+cmd e00000900b
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd 6000002002
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd 6000002002
+cmd 8000000002
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd 6000002002
+# TRACK_PLAY 02 and a run of 200 ticks of its audio, PAUSE and RESUME inside it
+disc 1
+cmd a000000000
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd d00000200b
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd 4000000006
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd 3000000007
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+tick
+cmd a000000000
