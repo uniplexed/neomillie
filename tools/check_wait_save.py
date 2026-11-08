@@ -7,7 +7,8 @@
 
 """Read the save file of the wait counter: python tools/check_wait_save.py wait.sav
 
-The debug builds neogeo_wait, neogeo8_wait, neogeo8_zbuf and neogeocd_wait write it (rtl/test/wait_counter.sv). Prints
+The debug builds neogeo_wait, neogeo8_wait, neogeo8_zbuf and neogeocd_wait write it (rtl/test/wait_counter.sv). The CD
+core from 0.5.1 writes waits.sav, 8 records of layout 3 below, one per run, so one file compares several runs. Prints
 what the memory cost the 68K, split by what CRAM0 was doing when each read's request arrived. Exit code 0 when
 the file is good, whatever the numbers. --selftest runs the checks on made-up files.
 Word 1 holds the layout. 1 is the cartridge core, whose owner codes are loader, idle, fix read and Z80 read. 2 is the
@@ -23,6 +24,7 @@ WORDS = 64
 WORDS_L3 = 128
 PATTERN_OLD = 32        # layouts 1 and 2: the read-lag pattern is words 32-63
 PATTERN_L3 = 48         # layout 3: words 48-63, and word 127
+RUN_WORD = 105          # the CD core from 0.5.1: the run number. A blank record has no magic word
 CLK_HZ = 48_000_000     # near enough for a time in minutes
 # Mux owner codes by layout. In the CD core 2 and 3 never happen (no fix or Z80 read on CRAM0): a count there is a fault
 CD_ORDER = [(1, "idle"), (0, "CD write queue"), (2, "fix read"), (3, "Z80 read")]
@@ -68,6 +70,16 @@ def cd_lines(r):
             f"writes to the transfer area: {r[23] >> 8} FIX, {r[25] >> 8} SPR, {r[28] >> 8} PCM (modulo 2^24), {r[29] >> 16} Z80 (modulo 65536)"]
 
 
+def bios_model(s):
+    """Word 32, bits 8 to 24: what the UniBIOS asked for as its model and region; cores before this field read as none seen."""
+    if not (s >> 24) & 1:
+        return "no UniBIOS seen (not a UniBIOS, or a core from before this field)"
+    wanted, region = (s >> 16) & 0xFF, (s >> 8) & 0xFF
+    names = {0: "TOPLOAD", 1: "FRONTLOADER", 2: "CDZ"}
+    stored = "CDZ" if s & 1 else "TOPLOAD"
+    return f"UniBIOS seen; it last wrote {names.get(wanted, hex(wanted))}, region setting {region}; the core stored {stored}"
+
+
 def settings_lines(r):
     """Word 32: what was in effect at the last frame, and what the reset's words 33 say."""
     s = r[32]
@@ -78,6 +90,7 @@ def settings_lines(r):
              f"FF011C bit 12 (CD_LID) as the BIOS reads it: {lid}, which a top or front loader BIOS takes as tray {tray[0]}, "
              f"and a CDZ BIOS as tray {tray[1]}",
              f"CD Speed (cd_speed): {speed + 1}x; Region (CD_REGION): {REGION[region]}; Lid open (debug, status[15]): {'on' if lid_dbg else 'off'}",
+             f"UniBIOS SYSTEM setting: {bios_model(s)}",
              f"resets: {r[33] >> 24} (modulo 256), counting the first start; the last ended at frame {r[33] & 0xFFFFFF}"]
     if in_reset:
         lines.append("at the last frame the core was held in reset, as after Quit: the drive state above reads STOP at LBA 0 "
@@ -175,6 +188,237 @@ def dma_lines(r):
     return lines
 
 
+def hold_line(r):
+    """Words 106 to 109, from 0.5.2: the 2x hold in cd.sv, which keeps a sector back while the decoder's interrupt is masked."""
+    if r[106] == 0xFFFFFFFF:        # a file of 0.5.1 has 106 words, and the host filled the rest with ones
+        return "2x hold: not counted in this file (from 0.5.2)"
+    holds, expired, worst, total = r[106:110]
+    text = (f"2x hold (sector kept from the decoder while its interrupt is masked): {holds} times, {total / (CLK_HZ / 1e3):.1f} ms in all, "
+            f"the longest {worst / (CLK_HZ / 1e3):.1f} ms; ran out at its 50 ms limit {expired} times")
+    if expired:
+        text += ": the program kept the interrupt masked for 50 ms, and the sector was let through with it masked"
+    return text
+
+
+RUNOUT_UNIT_MS = 32768 / CLK_HZ * 1e3     # the mask time after a run-out counts in 2^15 clocks
+
+
+def runouts(r):
+    """Words 110 to 125, from 0.5.3: the last 8 holds that ran out, oldest first, as (frame, LBA, ms masked after, still masked).
+    None for an older file, whose words there are the host's ones."""
+    if r[110] == 0xFFFFFFFF and r[111] == 0xFFFFFFFF:
+        return None
+    out = []
+    for i in reversed(range(8)):
+        a, b = r[110 + 2 * i], r[111 + 2 * i]
+        if a == 0 and b == 0:
+            continue
+        frame = r[2] - ((r[2] - (a >> 16)) & 0xFFFF)
+        out.append((frame, b & 0xFFFFFF, (a & 0xFFFF) * RUNOUT_UNIT_MS, bool(b >> 31)))
+    return out
+
+
+def runout_lines(r):
+    got = runouts(r)
+    if got is None:
+        return ["the hold's run-outs, one by one: not in this file (from 0.5.3)"]
+    lines = ["--- The last holds that ran out, oldest first: the sector then went in with the interrupt still masked"]
+    for frame, lba, ms, still in got:
+        lines.append(f"  frame {frame} ({frame / 60:.1f} s): drive at LBA {lba}, the mask stayed on {ms:.1f} ms more"
+                     f"{', and was still on at the last frame' if still else ''}")
+    if not got:
+        lines.append("  none")
+    return lines
+
+
+def runout_short(r):
+    got = runouts(r)
+    return "" if not got else " at frames " + " ".join(str(f) for f, *_ in got)
+
+
+def run_short(r):
+    if rev(r) >= 6:
+        return f"{r[108]} sectors DMA'd, last offered {header_text(r[109])}, timelines stopped: CD/CDZ off {r[126] >> 1 & 1}, on {r[126] >> 2 & 1}"
+    if rev(r) >= 5:
+        got = read_writes(r)
+        last = f", the last at frame {got[-1][0]}: {QUEUE_VARS[got[-1][1]]}" if got else ""
+        stop = "stopped at PLAY 60:58:21" if r[126] & 2 else "no PLAY 60:58:21"
+        return f"{r[108]} sectors DMA'd, {r[107]} queue/read writes, {stop}{last}"
+    if rev(r) >= 4:
+        got = read_writes(r)
+        last = f", the last at frame {got[-1][0]}: {READ_VARS[got[-1][1]]}" if got else ""
+        return f"{r[108]} sectors DMA'd, last offered {header_text(r[109])}, {r[107]} BIOS read changes{last}"
+    if rev(r) >= 3:
+        got = bios_writes(r)
+        return (f"{r[108]} sectors DMA'd, {r[126] >> 16} late STAT3 reads, special reads ended well {r[109]} (7782 {r[107]}, "
+                f"status {r[126] >> 8 & 0xFF:02X}), {sum(1 for _, w, d in got if w == '7778' and d)} special reads started in the last 16 BIOS writes")
+    if rev(r) >= 2:
+        got = early_reads(r)
+        last = f", the last at frame {got[-1][0]}, {got[-1][1]:06X}" if got else ""
+        return f"{r[108]} sectors DMA'd, {r[109]} skipped, {r[107]} lost, {r[126]} early reads{last}"
+    if rev(r) >= 1:
+        got = lost_sectors(r)
+        last = f", the last at frame {got[-1][0]}, {header_text(got[-1][1])}" if got else ""
+        return f"hold {r[106]}x, {r[108]} sectors DMA'd, {r[109]} skipped, {r[126]} lost{last}"
+    return hold_short(r) + runout_short(r)
+
+
+def hold_short(r):
+    if r[106] == 0xFFFFFFFF:
+        return "hold not counted"
+    return f"hold {r[106]}x, ran out {r[107]}x, longest {r[108] / (CLK_HZ / 1e3):.1f} ms"
+
+
+def rev(r):
+    """Word 1 bits 23:19: 0 up to 0.5.3, where words 108 to 125 are the hold's times and run-outs; 1 in 0.5.4, the sectors and
+    the last lost; 2 from 0.5.5, the sectors and the early reads of PROG RAM."""
+    return (r[1] >> 19) & 0x1F
+
+
+def bcd(v):
+    return (v >> 4) * 10 + (v & 0xF) if (v >> 4) < 10 and (v & 0xF) < 10 else None
+
+
+def header_text(h):
+    """A sector header as cd.sv keeps it: {mode, frame, second, minute}, BCD, minute in the low byte."""
+    m, s, f = bcd(h & 0xFF), bcd((h >> 8) & 0xFF), bcd((h >> 16) & 0xFF)
+    if None in (m, s, f):
+        return f"header {h:08X}"
+    return f"LBA {(m * 60 + s) * 75 + f - 150} ({m:02}:{s:02}:{f:02}, mode {h >> 24})"
+
+
+def lost_sectors(r):
+    """Words 110 to 125, from 0.5.4: the last 8 sectors lost, oldest first, as (frame, header, interrupt reached, dropped)."""
+    out = []
+    for i in reversed(range(8)):
+        a, b = r[110 + 2 * i], r[111 + 2 * i]
+        if a == 0 and b == 0:
+            continue
+        out.append((r[2] - ((r[2] - (a >> 16)) & 0xFFFF), b, bool(a & 2), bool(a & 1)))
+    return out
+
+
+def sector_lines(r):
+    taken, skipped, lost = r[108], r[109], r[126]
+    lines = [f"sectors the decoder offered: {taken} DMA'd, {skipped} skipped (status read, no DMA), {lost} LOST "
+             "(never read: the next sector replaced it in cd.sv's one-sector cache)"]
+    got = lost_sectors(r)
+    if got:
+        lines.append("--- The last sectors lost, oldest first. Interrupt: whether the decoder's reached the 68K's flags, or fell masked and was dropped")
+        for frame, h, reached, dropped in got:
+            fate = "reached" if reached else "DROPPED, masked" if dropped else "none seen"
+            lines.append(f"  frame {frame} ({frame / 60:.1f} s): {header_text(h)}, interrupt {fate}")
+    return lines
+
+
+def early_reads(r):
+    """Words 110 to 125, from 0.5.5: the last 16 reads of PROG RAM from a 2 KB block nothing had written since the reset,
+    oldest first, as (frame, byte address, by a DMA). Frames are kept modulo 2048 and read as the latest before the file's."""
+    out = []
+    for i in reversed(range(min(16, r[126]))):
+        e = r[110 + i]
+        out.append((r[2] - ((r[2] - (e >> 21)) & 0x7FF), (e & 0xFFFFF) << 1, bool(e >> 20 & 1)))
+    return out
+
+
+def early_lines(r):
+    lines = [f"sectors the decoder offered: {r[108]} DMA'd, {r[109]} skipped (status read, no DMA), {r[107]} lost",
+             f"2x hold: {r[106] >> 16} times, ran out at its 50 ms limit {r[106] & 0xFFFF} times",
+             f"reads of PROG RAM ahead of any write to their 2 KB block since the reset: {r[126]} blocks (counted through resets)"]
+    got = early_reads(r)
+    if got:
+        lines.append("--- The last of them, oldest first: what was read there is whatever an earlier run left")
+        for frame, addr, dma in got:
+            lines.append(f"  frame {frame} ({frame / 60:.1f} s): {addr:06X} by {'a DMA' if dma else 'the 68K'}")
+    return lines
+
+
+QUEUE_VARS = ("$7650/1 queue head, tail", "$7472.. queue entry", "$7688 sectors to come", "$76B6/7 reading, stage",
+              "$76C8 sought min:sec", "$76D8/9 CDDA", "$76F6/7 CDDA", "$7E04 flags")
+
+
+def queue_lines(r):
+    h = r[109]
+    lines = [f"sectors the decoder offered and the program DMA'd: {r[108]}",
+             f"STAT3 reads with the decoder on that found the status no longer valid: {r[126] >> 16}",
+             f"2x hold: {r[106] >> 16} times, ran out at its 50 ms limit {r[106] & 0xFFFF} times",
+             f"the last sector the decoder offered: {header_text(h)}",
+             f"writes kept to the BIOS's queue and read variables: {r[107]}; "
+             + ("the log STOPPED at the first PLAY to 60:58:21 (the music)" if r[126] & 2 else "no PLAY to 60:58:21 came: the log ran to the end")]
+    got = read_writes(r)
+    if got:
+        lines.append("--- The last of them, oldest first (byte writes show their byte; queue entries are the BIOS's own codes)")
+        for frame, var, ds, data in got:
+            val = f"{data >> 8:02X}" if ds == 2 else f"{data & 0xFF:02X}" if ds == 1 else f"{data:04X}"
+            side = " (upper byte)" if ds == 2 else " (lower byte)" if ds == 1 else ""
+            lines.append(f"  frame {frame} ({frame / 60:.1f} s): {QUEUE_VARS[var]} = {val}{side}")
+    return lines
+
+
+READ_VARS = ("$76C8 sought min:sec", "$76CA sought frame", "$7688 sectors to come", "$76B6/7 reading, stage",
+             "$7E04 flags", "FF0002 irq mask", "$7678/9 abort", "$76A6 sectors asked")
+
+
+def read_writes(r):
+    """Words 110 to 125, from 0.5.6 (second build): the last 16 changes the 68K made to the BIOS's sector read variables,
+    oldest first, as (frame, variable, byte strobes, data as on the bus). Frames are modulo 2048."""
+    out = []
+    for i in reversed(range(16)):
+        e = r[110 + i]
+        if e == 0:
+            continue
+        out.append((r[2] - ((r[2] - (e >> 21)) & 0x7FF), e >> 18 & 7, e >> 16 & 3, e & 0xFFFF))
+    return out
+
+
+def read_lines(r):
+    h = r[109]
+    lines = [f"sectors the decoder offered and the program DMA'd: {r[108]}",
+             f"STAT3 reads with the decoder on that found the status no longer valid: {r[126] >> 16}",
+             f"2x hold: {r[106] >> 16} times, ran out at its 50 ms limit {r[106] & 0xFFFF} times",
+             f"the last sector the decoder offered: {header_text(h)}, {'DMA' + chr(39) + 'd' if r[126] & 1 else 'not DMA' + chr(39) + 'd'}",
+             f"changes to the BIOS's sector read variables: {r[107]}"]
+    got = read_writes(r)
+    if got:
+        lines.append("--- The last of them, oldest first (byte writes show their byte)")
+        for frame, var, ds, data in got:
+            val = f"{data >> 8:02X}" if ds == 2 else f"{data & 0xFF:02X}" if ds == 1 else f"{data:04X}"
+            lines.append(f"  frame {frame} ({frame / 60:.1f} s): {READ_VARS[var]} = {val}")
+    return lines
+
+
+BIOS_VARS = ("7778", "7698", "777E", "7780")
+
+
+def bios_writes(r):
+    """Words 110 to 125, from 0.5.6: the last 16 writes to the CDZ BIOS's $7778 (special read running), $7698 (stage), and
+    $777E/$7780 (special reads that ended well), oldest first, as (frame, variable, data). Frames are modulo 16384."""
+    out = []
+    for i in reversed(range(16)):
+        e = r[110 + i]
+        if e == 0:
+            continue
+        out.append((r[2] - ((r[2] - (e >> 18)) & 0x3FFF), BIOS_VARS[e >> 16 & 3], e & 0xFFFF))
+    return out
+
+
+def bios_lines(r):
+    lines = [f"sectors the decoder offered and the program DMA'd: {r[108]}",
+             f"STAT3 reads with the decoder on that found the status no longer valid (nVALST back at 1, 1.8 ms after the "
+             f"sector; the BIOS drops such a sector): {r[126] >> 16}",
+             f"2x hold: {r[106] >> 16} times, ran out at its 50 ms limit {r[106] & 0xFFFF} times",
+             "CDZ BIOS protection (work RAM, A5 = $108000), last values written:",
+             f"  $777E special reads that ended well: {r[109]}; $7782 drive status count: {r[107]}; "
+             f"$7786 status code: {r[126] >> 8 & 0xFF:02X}; $7679 abort flag: {r[126] & 0xFF:02X}",
+             "  CPY.TXT's check passes only with both counts nonzero"]
+    got = bios_writes(r)
+    if got:
+        lines.append("--- The last writes to $7778 (special read running), $7698 (stage), $777E/$7780 (count), oldest first")
+        for frame, var, data in got:
+            lines.append(f"  frame {frame} ({frame / 60:.1f} s): ${var} = {data:04X}")
+    return lines
+
+
 def verdict_lines(r):
     """The two questions the counters are for."""
     lost = r[76]
@@ -190,7 +434,24 @@ def verdict_lines(r):
         lines.append("fetch: never behind the drive")
     if r[46] >> 31:
         lines.append(f"fetch: sectors failed from {valid_frame(r[46])}: host reads, or a position off the disc")
-    return lines
+    if rev(r) >= 6:
+        return lines + [f"sectors the decoder offered and the program DMA'd: {r[108]}",
+                        f"STAT3 reads with the decoder on that found the status no longer valid: {r[126] >> 16}",
+                        f"2x hold: {r[106] >> 16} times, ran out at its 50 ms limit {r[106] & 0xFFFF} times",
+                        f"the last sector the decoder offered: {header_text(r[109])}, changes to the BIOS's variables: {r[107]}",
+                        "the events are in the timelines at the end of this report"]
+    if rev(r) >= 5:
+        return lines + queue_lines(r)
+    if rev(r) >= 4:
+        return lines + read_lines(r)
+    if rev(r) >= 3:
+        return lines + bios_lines(r)
+    if rev(r) >= 2:
+        return lines + early_lines(r)
+    if rev(r) >= 1:
+        return lines + [f"2x hold: {r[106]} times, ran out at its 50 ms limit {r[107]} times"] + sector_lines(r)
+    lines.append(hold_line(r))
+    return lines + runout_lines(r)
 
 
 def check(data):
@@ -261,7 +522,102 @@ def check(data):
     return ok, lines
 
 
+def check_runs(data):
+    """The CD core from 0.5.1 keeps 8 records of 512 bytes: a line per run, oldest first, then each run. Returns (ok, lines)."""
+    size = WORDS_L3 * 4
+    runs = []
+    for at in range(0, len(data) - size + 1, size):
+        rec = data[at:at + size]
+        words = struct.unpack(f">{WORDS_L3}I", rec)
+        if words[0] == MAGIC:      # a blank record is 0 or, as the host creates a new file, all ones
+            runs.append((words[RUN_WORD], words, rec))
+    if not runs:
+        return False, ["no run in the file: no record starts with the counter's magic"]
+    runs.sort(key=lambda run: run[0])
+    lines = ["--- The runs in this file, oldest first. Worst read in ms, one sector's time being 6.7 at 2x and 13.3 at 1x"]
+    for no, r, _ in runs:
+        lines.append(f"  run {no}: {r[2]} frames, {r[33] >> 24} resets, {r[28] & 0xFF} failed sectors, worst read {r[42] / (CLK_HZ / 1e3):.1f} ms, "
+                     f"{r[44]} late polls, {run_short(r)}, drive {DRIVE_STATE.get((r[27] >> 24) & 0xF, '?')} at LBA {r[27] & 0xFFFFFF}")
+    lines.append("Counts run on through a reset, so a run's own are the difference from the run before it, within one opening of the core")
+    ok = True
+    for no, _, rec in runs:
+        run_ok, run_lines = check(rec)
+        ok = ok and run_ok
+        lines += ["", f"=== Run {no}"] + run_lines
+    return ok, lines
+
+
+TL_VARS = ("$7651 queue tail", "$7472.. queue entry", "$7688 sectors to come", "$76B6/7 reading, stage", "$76C8 position sought",
+           "$7EC4 loading", "$76F6 CDDA request", "$7E04 flags")
+MUSIC_PAYLOAD = 0x01285063      # the drive command PLAY to 60:58:21, as a timeline holds it
+SEARCH_PAYLOAD = 0x07120003     # PLAY to 00:02:17, where the Start Game's directory search begins
+TL_UNIT_MS = 1024 / CLK_HZ * 1e3
+
+
+def timeline_event(ty, pay):
+    if ty == 0:
+        d = [(pay >> s) & 0xF for s in (4, 8, 12, 16, 20, 24)]
+        text = command_name(pay)
+        if pay & 0xF in (3, 4):
+            text += f" to {d[0]}{d[1]}:{d[2]}{d[3]}:{d[4]}{d[5]}"
+        return "command " + text
+    if ty == 1:
+        lba = pay & 0xFFFFFF
+        lba = lba - (1 << 24) if lba >> 23 else lba
+        return f"{'audio' if pay >> 31 else 'data'} sector {lba} asked for"
+    if ty in (2, 3, 4):
+        return f"sector {('DMA' + chr(39) + 'd', 'skipped', 'LOST')[ty - 2]}: {header_text(pay)}"
+    if ty == 5:
+        ds, data = pay >> 16 & 3, pay & 0xFFFF
+        val = f"{data >> 8:02X}" if ds == 2 else f"{data & 0xFF:02X}" if ds == 1 else f"{data:04X}"
+        return f"{TL_VARS[pay >> 18 & 7]} = {val}"
+    if ty == 6:
+        return f"drive status {DRIVE_STATE.get(pay >> 28, '?')} at LBA {pay & 0xFFFFFF}"
+    return f"event type {ty}: {pay:08X}"
+
+
+def timeline_lines(data):
+    """The file's second 4 KB, from 0.5.6's last builds: a timeline per CD/CDZ setting, off then on. Times in ms from the music."""
+    lines = []
+    for half, name in enumerate(("off", "on")):
+        w = struct.unpack(">512I", data[half * 2048:(half + 1) * 2048])
+        lines += ["", f"=== Timeline, CD/CDZ {name}"]
+        if w[0] >> 16 != 0x544C:
+            lines.append("not recorded: the music's PLAY did not come in this setting, or 96 more events did not follow it")
+            continue
+        head, wrapped = w[0] & 0xFF, bool(w[0] >> 8 & 1)
+        order = list(range(head, 256)) + list(range(1, head)) if wrapped else list(range(1, head))
+        ev = [(w[2 * k] >> 28, w[2 * k] & 0xFFFFFFF, w[2 * k + 1]) for k in order]
+        t0 = next((t for ty, t, pay in ev if ty == 0 and pay == MUSIC_PAYLOAD), None)
+        if t0 is None:
+            lines.append("the music's PLAY is not in the ring")
+            continue
+        search = [i for i, (ty, t, pay) in enumerate(ev) if ty == 0 and pay == SEARCH_PAYLOAD and t <= t0]
+        lines.append(f"run {w[1]}, {len(ev)} events" + ("" if wrapped else ", the ring did not wrap"))
+        if search:
+            part = [e for e in ev[search[-1]:] if e[1] <= t0]
+            asked = sum(1 for ty, t, pay in part if ty == 1 and not pay >> 31)
+            offered = sum(1 for ty, t, pay in part if ty in (2, 3, 4))
+            lines.append(f"from the last PLAY to 00:02:17 to the music, {(t0 - part[0][1]) * TL_UNIT_MS:.1f} ms: "
+                         f"{asked} data sectors asked for, {offered} offered")
+        else:
+            lines.append("the PLAY to 00:02:17 before the music is not in the ring")
+        for ty, t, pay in ev:
+            lines.append(f"  {(t - t0) * TL_UNIT_MS:+10.1f} ms  {timeline_event(ty, pay)}")
+    return lines
+
+
+def read_file(data):
+    if len(data) >= 8192:
+        ok, lines = check_runs(data[:4096])
+        return ok, lines + timeline_lines(data[4096:8192])
+    return check_runs(data) if len(data) >= 2 * WORDS_L3 * 4 else check(data)
+
+
 def selftest():
+    assert "no UniBIOS" in bios_model(0)
+    assert "wrote TOPLOAD, region setting 2; the core stored CDZ" in bios_model(1 << 24 | 0 << 16 | 2 << 8 | 1)
+    assert "wrote CDZ, region setting 1; the core stored TOPLOAD" in bios_model(1 << 24 | 2 << 16 | 1 << 8)
     def make(total=48_000_000 * 600, frames=36000, worst=4000, reads=(0, 900, 60, 40), lost=(0, 0, 240, 80), layout=1):
         good = [MAGIC, (7 << 24) | layout, frames, worst, total >> 32, total & 0xFFFFFFFF]
         for x in reads + lost:
@@ -350,6 +706,12 @@ def selftest():
     assert "held in reset" not in text, lines
     assert lines.index(next(l for l in lines if "004000" in l)) < lines.index(next(l for l in lines if "002000" in l)), lines    # oldest first
     assert "the 68K is running" in text, lines
+    # The hold, words 106-109, 48,000 clocks to the millisecond
+    assert "2x hold" in text and "0 times" in text and "ran out at its 50 ms limit 0 times" in text, lines
+    held = l3[:]
+    held[106:110] = [3, 1, 2_400_000, 4_800_000]
+    htext = "\n".join(check(pack(held))[1])
+    assert "3 times, 100.0 ms in all, the longest 50.0 ms; ran out at its 50 ms limit 1 times: the program kept" in htext, htext
     assert "sectors requested: 900 data, 40 audio" in text and "found in the prefetch bank: 800; needed a host read: 140" in text, lines
     assert "worst host read: 480000 clocks, 10000 us." in text, lines
     assert "still at the host: 3" in text and "unanswered: 7." in text and "sink full: 11." in text, lines
@@ -402,6 +764,140 @@ def selftest():
     wrong = make(layout=3)
     ok, lines = check(pack(wrong))
     assert not ok and any("read-lag pattern" in l for l in lines), lines
+
+    # ---- Several runs: in run order whatever the record, an empty record skipped ----
+    def run(no, frames, late):
+        g = make3(frames=frames)
+        g[22], g[44], g[RUN_WORD] = frames, late, no
+        return g
+    empty = make3(frames=0)
+    empty[:32] = [0] * 32
+    file = [empty[:] for _ in range(8)]
+    file[1], file[0], file[7] = run(9, 100, 1), run(8, 200, 2), run(7, 300, 3)
+    ok, lines = read_file(pack([x for rec in file for x in rec]))
+    assert ok, lines
+    runs = [l for l in lines if l.startswith("  run ")]
+    assert [l.split()[1] for l in runs] == ["7:", "8:", "9:"], runs
+    assert "100 frames" in runs[2] and "3 late polls" in runs[0], runs
+    assert [l for l in lines if l.startswith("=== Run")] == ["=== Run 7", "=== Run 8", "=== Run 9"], lines
+    ok, lines = read_file(pack([x for _ in range(8) for x in empty]))
+    assert not ok and "no run in the file" in lines[0], lines
+    # One bad record says so for the whole file
+    file[0][22] += 1
+    assert not read_file(pack([x for rec in file for x in rec]))[0]
+    # A file of one record is still read as before
+    assert read_file(pack(l3))[0]
+    # The run-outs, words 110-125: the newest first in the file, oldest first in print, frames past a 16-bit wrap
+    ro = make3(frames=70000)
+    ro[22] = 70000
+    ro[106:110] = [2, 2, 2_400_000, 4_800_000]
+    ro[110:114] = [((69990 & 0xFFFF) << 16) | 3, 0x80000000 | 4500, ((65540 & 0xFFFF) << 16) | 0, 1200]
+    text = "\n".join(check(pack(ro))[1])
+    assert "frame 65540 (1092.3 s): drive at LBA 1200, the mask stayed on 0.0 ms more\n" in text, text
+    assert "frame 69990 (1166.5 s): drive at LBA 4500, the mask stayed on 2.0 ms more, and was still on" in text, text
+    assert text.index("frame 65540 (") < text.index("frame 69990 ("), text
+    assert "not in this file (from 0.5.3)" in "\n".join(check(pack([*l3[:110], *[0xFFFFFFFF] * 16, *l3[126:]]))[1])
+    # 0.5.4, revision 1: the sectors in 108, 109 and 126, the last lost in 110-125, newest first in the file
+    se = make3(frames=70000)
+    se[1] |= 1 << 19
+    se[22] = 70000
+    se[106:110] = [5, 1, 900, 3]
+    se[110:114] = [((69990 & 0xFFFF) << 16) | 1, 0x01_15_02_00, ((65540 & 0xFFFF) << 16) | 2, 0xFF]
+    se[126] = 2
+    text = "\n".join(check(pack(se))[1])
+    assert "900 DMA'd, 3 skipped (status read, no DMA), 2 LOST" in text, text
+    assert "frame 69990 (1166.5 s): LBA 15 (00:02:15, mode 1), interrupt DROPPED, masked" in text, text
+    assert "frame 65540 (1092.3 s): header 000000FF, interrupt reached" in text, text
+    assert text.index("frame 65540 (") < text.index("frame 69990 ("), text
+    assert "mask stayed on" not in text, text
+    se[RUN_WORD] = 3
+    lines = read_file(pack(se + [0] * (8 * WORDS_L3 - len(se))))[1]
+    assert "hold 5x, 900 sectors DMA'd, 3 skipped, 2 lost, the last at frame 69990, LBA 15" in lines[1], lines
+    # 0.5.5, revision 2: the early reads, newest first in the file, frames modulo 2048
+    ea = make3(frames=70000)
+    ea[1] |= 2 << 19
+    ea[22] = 70000
+    ea[106:110] = [(5 << 16) | 1, 2, 900, 3]
+    ea[110] = ((69990 & 0x7FF) << 21) | (1 << 20) | (0x1FFFFE >> 1)
+    ea[111] = ((68000 & 0x7FF) << 21) | (0x001800 >> 1)
+    ea[126] = 2
+    text = "\n".join(check(pack(ea))[1])
+    assert "900 DMA'd, 3 skipped (status read, no DMA), 2 lost" in text and "2x hold: 5 times, ran out at its 50 ms limit 1 times" in text, text
+    assert "frame 68000 (1133.3 s): 001800 by the 68K\n  frame 69990 (1166.5 s): 1FFFFE by a DMA" in text, text
+    ea[RUN_WORD] = 4
+    lines = read_file(pack(ea + [0] * (8 * WORDS_L3 - len(ea))))[1]
+    assert "900 sectors DMA'd, 3 skipped, 2 lost, 2 early reads, the last at frame 69990, 1FFFFE" in lines[1], lines
+    # 0.5.6, revision 3: the CDZ BIOS's protection variables, newest first in the file, frames modulo 16384
+    bw = make3(frames=70000)
+    bw[1] |= 3 << 19
+    bw[22] = 70000
+    bw[106:110] = [(5 << 16) | 1, 7, 900, 0]
+    bw[110] = ((69990 & 0x3FFF) << 18) | (0 << 16) | 0x0000
+    bw[111] = ((69700 & 0x3FFF) << 18) | (0 << 16) | 0x0001
+    bw[126] = (14 << 16) | (0x02 << 8) | 0x00
+    text = "\n".join(check(pack(bw))[1])
+    assert "$777E special reads that ended well: 0; $7782 drive status count: 7; $7786 status code: 02" in text, text
+    assert "the BIOS drops such a sector): 14" in text, text
+    assert "frame 69700 (1161.7 s): $7778 = 0001\n  frame 69990 (1166.5 s): $7778 = 0000" in text, text
+    bw[RUN_WORD] = 5
+    lines = read_file(pack(bw + [0] * (8 * WORDS_L3 - len(bw))))[1]
+    assert "900 sectors DMA'd, 14 late STAT3 reads, special reads ended well 0 (7782 7, status 02), 1 special reads started" in lines[1], lines
+    # 0.5.6 second build, revision 4: the BIOS's sector read variables, newest first in the file, frames modulo 2048
+    rd = make3(frames=70000)
+    rd[1] |= 4 << 19
+    rd[22] = 70000
+    rd[106:110] = [(5 << 16) | 1, 2, 900, 0x01_17_02_00]
+    rd[110] = ((69990 & 0x7FF) << 21) | (2 << 18) | (3 << 16) | 0x0100
+    rd[111] = ((69900 & 0x7FF) << 21) | (1 << 18) | (2 << 16) | 0x1700
+    rd[126] = 1
+    text = "\n".join(check(pack(rd))[1])
+    assert "the last sector the decoder offered: LBA 17 (00:02:17, mode 1), DMA'd" in text, text
+    assert "frame 69900 (1165.0 s): $76CA sought frame = 17\n  frame 69990 (1166.5 s): $7688 sectors to come = 0100" in text, text
+    rd[RUN_WORD] = 6
+    lines = read_file(pack(rd + [0] * (8 * WORDS_L3 - len(rd))))[1]
+    assert "900 sectors DMA'd, last offered LBA 17 (00:02:17, mode 1), 2 BIOS read changes, the last at frame 69990: $7688" in lines[1], lines
+    # Revision 5: the BIOS's queue and read variables, stopped at the PLAY to 00:02:00 (word 126 bit 1)
+    rq = make3(frames=70000)
+    rq[1] |= 5 << 19
+    rq[22] = 70000
+    rq[106:110] = [(5 << 16) | 1, 2, 900, 0x01_17_02_00]
+    rq[110] = ((69990 & 0x7FF) << 21) | (1 << 18) | (2 << 16) | 0x0909
+    rq[111] = ((69900 & 0x7FF) << 21) | (0 << 18) | (1 << 16) | 0x0001
+    rq[126] = 2
+    text = "\n".join(check(pack(rq))[1])
+    assert "the log STOPPED at the first PLAY to 60:58:21 (the music)" in text, text
+    assert "frame 69900 (1165.0 s): $7650/1 queue head, tail = 01 (lower byte)\n  frame 69990 (1166.5 s): $7472.. queue entry = 09 (upper byte)" in text, text
+    rq[RUN_WORD] = 7
+    lines = read_file(pack(rq + [0] * (8 * WORDS_L3 - len(rq))))[1]
+    assert "900 sectors DMA'd, 2 queue/read writes, stopped at PLAY 60:58:21, the last at frame 69990: $7472.. queue entry" in lines[1], lines
+    # Revision 6: the timelines in the file's second 4 KB. CD/CDZ on recorded, off blank, unwrapped, stale entries past the head
+    tl = make3(frames=70000)
+    tl[1] |= 6 << 19
+    tl[22] = 70000
+    tl[106:110] = [(5 << 16) | 1, 2, 900, 0x01_17_02_00]
+    tl[126] = 4
+    tl[RUN_WORD] = 8
+    unit = int(CLK_HZ / 1024 / 1000)      # about a millisecond
+    entries = [(0, 1000, SEARCH_PAYLOAD), (1, 1000 + unit, 17), (2, 1000 + 2 * unit, 0x01_17_02_00),
+               (5, 1000 + 3 * unit, (2 << 18) | (3 << 16) | 0x0058), (0, 1000 + 10 * unit, MUSIC_PAYLOAD),
+               (1, 1000 + 11 * unit, 0x80000000 | 1000), (6, 1000 + 12 * unit, 0x10000011), (1, 1000 + 13 * unit, 0xFFFFFC)]
+    half = [0] * 512
+    half[0], half[1] = 0x544C0000 | (len(entries) + 1), 9
+    for k, (ty, t, pay) in enumerate(entries, 1):
+        half[2 * k], half[2 * k + 1] = (ty << 28) | t, pay
+    half[2 * (len(entries) + 1)], half[2 * (len(entries) + 1) + 1] = 0xFFFFFFFF, 0xFFFFFFFF
+    whole = pack(tl + [0] * (8 * WORDS_L3 - len(tl))) + struct.pack(">512I", *[0xFFFFFFFF] * 512) + struct.pack(">512I", *half)
+    ok, lines = read_file(whole)
+    text = "\n".join(lines)
+    assert ok, lines
+    assert "900 sectors DMA'd, last offered LBA 17 (00:02:17, mode 1), timelines stopped: CD/CDZ off 0, on 1" in lines[1], lines
+    assert "=== Timeline, CD/CDZ off\nnot recorded" in text, text
+    assert "run 9, 8 events, the ring did not wrap" in text, text
+    assert "1 data sectors asked for, 1 offered" in text, text
+    assert "command PLAY to 00:02:17" in text and "data sector 17 asked for" in text and "sector DMA'd: LBA 17" in text, text
+    assert "$7688 sectors to come = 0058" in text and "drive status PLAY at LBA 17" in text and "audio sector 1000 asked for" in text, text
+    assert "data sector -4 asked for" in text and "event type 15" not in text, text
+    assert text.index("command PLAY to 00:02:17") < text.index("command PLAY to 60:58:21") < text.index("audio sector 1000"), text
     print("selftest ok")
 
 
@@ -412,7 +908,7 @@ def main(argv):
     if len(argv) != 1:
         sys.exit(__doc__)
     with open(argv[0], "rb") as f:
-        ok, lines = check(f.read())
+        ok, lines = read_file(f.read())
     print("\n".join(lines))
     print("FILE GOOD" if ok else "FILE NOT GOOD: see above")
     return 0 if ok else 1

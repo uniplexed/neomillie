@@ -19,3 +19,4 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cd_fix_sram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cd_host.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cd_mount.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cd_fetch.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cd_bios_model.sv

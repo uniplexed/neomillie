@@ -17,7 +17,7 @@
 //                                       slot's words unchanged; the next fetch clears fr_err
 // test_getfile_response_path            the slot's path, with spaces, ' and ',', read back on the path port
 // test_wait_slot_write                  the wait counter's save, one write of id 0x103 per rising edge of a level
-//                                       held high, after the openfile in flight, with its 256 bytes
+//                                       held high, after the openfile in flight, with its 4,096 bytes
 `timescale 1ns/1ps
 module tb_cd_host;
 
@@ -37,7 +37,7 @@ module tb_cd_host;
     // What the wait counter's copy would answer at 0x8, a word that says where it is, loaded on the strobe
     // as wait_counter.sv does
     logic [31:0] wait_rd_data = 0;
-    always @(posedge clk74) if (bridge_rd) wait_rd_data <= 32'h5A00_0000 | {24'd0, bridge_addr[9:2]};
+    always @(posedge clk74) if (bridge_rd) wait_rd_data <= 32'h5A00_0000 | {21'd0, bridge_addr[12:2]};
     wire [31:0] bridge_rd_data = bridge_addr[31:24] == 8'hF8 ? cmd_rd_data :
                                  bridge_addr[31:24] == 8'h71 ? host_rd_data :
                                  bridge_addr[31:28] == 4'h8  ? wait_rd_data : 32'h0;
@@ -401,17 +401,17 @@ module tb_cd_host;
         @(posedge clk74) ws_req <= 1;           // save_now rises, and stays high
         mount_wait(err);
         check(err == 0, $sformatf("openfile err %0d", err));
-        repeat (2 * (2000 + 200 + 128 * 2 * 88 + 12 * 88)) @(posedge clk74);
+        repeat (2 * (2000 + 200 + 2048 * 2 * 88 + 12 * 88)) @(posedge clk74);
         check(host_cmds() == n0 + 2, $sformatf("%0d host commands, 2 expected: the openfile, then one write", host_cmds() - n0));
         if (host_cmds() == n0 + 2) begin
             automatic host_bfm_pkg::cmd_t c = host.log_q[n0 + 1];
             check(host.log_q[n0].cmd == 16'h0192, "the openfile was not first");
-            check(c.cmd == 16'h0184 && c.id == 16'h0103 && c.offset == 0 && c.addr == 32'h8000_0000 && c.len == 512,
+            check(c.cmd == 16'h0184 && c.id == 16'h0103 && c.offset == 0 && c.addr == 32'h8000_0000 && c.len == 8192,
                   $sformatf("write cmd %04x id %0x offset %0d addr %08x len %0d", c.cmd, c.id, c.offset, c.addr, c.len));
             check(c.t_busy > host.log_q[n0].t_done, "the write started inside the openfile");
         end
         check(ws_dones - d0 == 1 && ws_err == 0, $sformatf("ws_done pulsed %0d times, ws_err %0d", ws_dones - d0, ws_err));
-        check(host.wlog.size() == 128, $sformatf("%0d words written", host.wlog.size()));
+        check(host.wlog.size() == 2048, $sformatf("%0d words written", host.wlog.size()));
         foreach (host.wlog[i])
             if (host.wlog[i] != (32'h5A00_0000 | i)) begin
                 check(0, $sformatf("written word %0d is %08x", i, host.wlog[i]));
@@ -421,7 +421,7 @@ module tb_cd_host;
         @(posedge clk74) ws_req <= 0;
         repeat (100) @(posedge clk74);
         @(posedge clk74) ws_req <= 1;
-        repeat (2 * (2000 + 200 + 128 * 2 * 88 + 12 * 88)) @(posedge clk74);
+        repeat (2 * (2000 + 200 + 2048 * 2 * 88 + 12 * 88)) @(posedge clk74);
         check(host_cmds() == n0 + 3 && host.log_q[$].cmd == 16'h0184, "no second write for the second rising edge");
         check(ws_dones - d0 == 2, $sformatf("ws_done pulsed %0d times after two edges", ws_dones - d0));
         ws_req <= 0;

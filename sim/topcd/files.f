@@ -36,6 +36,7 @@ rtl/cd/cdd_drive.sv
 rtl/cd/cd_host.sv
 rtl/cd/cd_mount.sv
 rtl/cd/cd_fetch.sv
+rtl/cd/cd_bios_model.sv
 rtl/cd/cd_fix_sram.sv
 rtl/cd/cd.sv
 upstream/NeoGeo_MiSTer/rtl/cd/drive.v

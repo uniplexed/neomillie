@@ -48,20 +48,25 @@ SD card, merging folders. The packages also add the `ng` and `ngcd` platform ent
 Changing the setting restarts the core and returns to the BIOS, so unsaved progress is lost. The disc stays mounted.
 The Pocket remembers the setting. Speeds above 2x are not offered: at 4x the SD card could not keep up.
 
+The setting also decides which console the UniBIOS runs as: a top loader with CD/CDZ off and a CDZ with it on. There is nothing
+to set. The SYSTEM item in the UniBIOS's own menu has no effect in this core, whatever it shows or has saved.
+
 ### Tested discs
 
-All with `uni-bioscd.rom`, on a Pocket. "Build" is the version the row was run on: 0.5.0 is this release, and 0.3.5 is
+All with `uni-bioscd.rom`, on a Pocket. "Build" is the version the row was run on: 0.5.1 is this release, and 0.3.5 is
 a debug build with the same fix for the 2x stop, plus a counter and a separate speed setting, so its 1x rows have
 CD/CDZ on, which this release does not offer at 1x.
 
 | Disc | Setting | Result | Build |
 |---|---|---|---|
 | The King of Fighters '95 | CD/CDZ on, 2x | Plays with music; see "Known issues" | 0.4.1 |
-| The King of Fighters '97 | CD/CDZ on, 2x | Works | 0.5.0 |
+| The King of Fighters '97 | CD/CDZ on, 2x | A fight reached, music fine | 0.5.1 |
+| The King of Fighters '97 | CD/CDZ off, 1x | A fight reached | 0.5.1 |
 | The King of Fighters '99 | CD/CDZ on, 2x | A fight finished, no cuts in the music heard | 0.4.0 |
 | Metal Slug | CD/CDZ off, 1x | Works | 0.4.0 |
 | Metal Slug | CD/CDZ on, 1x | A level cleared | 0.3.5 |
-| Samurai Shodown RPG | CD/CDZ on, 1x | Reaches the game; not played further | 0.3.5 |
+| Samurai Shodown RPG | CD/CDZ on, 2x | Loads on the first Start Game, up to the fight after choosing a character | 0.5.1 |
+| Samurai Shodown RPG | CD/CDZ off, 1x | Loads on the first Start Game, up to the fight after choosing a character | 0.5.1 |
 | Last Blade 2 | CD/CDZ off, 1x | Works | 0.5.0 |
 
 Converted but not yet tried: Crossed Swords II, Fatal Fury 3, Pulstar. Every run is in

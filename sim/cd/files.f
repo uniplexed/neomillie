@@ -16,4 +16,5 @@ rtl/cd/lc8951.v
 upstream/NeoGeo_MiSTer/rtl/cd/cdda.v
 rtl/cd/cd_host.sv
 rtl/cd/cd_fetch.sv
+rtl/cd/cd_bios_model.sv
 rtl/test/wait_counter.sv

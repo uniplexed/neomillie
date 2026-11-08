@@ -111,7 +111,11 @@ module neogeo_pocket
 	output  [4:0] dbg_wait,		// wait_counter.sv: {CRAM0 at the 68K's request, ROM zone, nAS, nRESET}
 `ifdef NEOGEO_CD
 	output [113:0] dbg_cdd,		// wait_counter.sv, layout 3: the CD side, see the assign below
-	output  [33:0] dbg_cd2,		// wait_counter.sv, layout 3: settings, 68K, DMA, see the assign below
+	output  [53:0] dbg_cd2,		// wait_counter.sv, layout 3: settings, 68K, DMA, hold, see the assign below
+	output  [36:0] dbg_sect,	// wait_counter.sv, layout 3: cd.sv's DBG_SECT, what became of each sector
+	output  [48:0] dbg_dmab,	// wait_counter.sv, layout 3: the CD DMA's PROG RAM accesses, see the assign below
+	output  [17:0] dbg_bus68,	// wait_counter.sv, layout 3: {nUDS, nLDS, the 68K's write data}
+	output  [25:0] dbg_dreq,	// wait_counter.sv, layout 3: the drive's request of a sector: {toggle, audio, LBA}
 	output [319:0] dbg_fetch,	// cd_fetch.sv's counts
 	output [383:0] dbg_dma,		// pocket_mem_mux.sv's counts
 `endif
@@ -595,6 +599,10 @@ wire CD_DATA_WR = ioctl_wr_x & CD_DATA_DOWNLOAD;
 wire CDDA_DOWNLOAD = cd_dl_download & cd_dl_audio;         // POCKET: was ioctl_index 4
 wire CDDA_WR = ioctl_wr_x & CDDA_DOWNLOAD;
 
+wire [2:0] dbg_hold;     // POCKET: cd.sv's hold, for the wait counter only
+wire [36:0] dbg_sect_cd; // POCKET: cd.sv's sectors, likewise
+wire cd_lid_bit = !SYSTEM_CDZ ^ status[15];
+
 cd_sys #(.MCLK(CD_MCLK)) cdsystem(
 	.nRESET(nRESET),
 	.clk_sys(CLK_48M), .CLK_68KCLK_EN(CLK_EN_68K_P),
@@ -604,7 +612,7 @@ cd_sys #(.MCLK(CD_MCLK)) cdsystem(
 	.SYSTEM_CDx(SYSTEM_CDx),
 	.CD_REGION(CD_REGION),
 	.CD_SPEED(cd_speed),
-	.CD_LID(~status[15] ^ SYSTEM_CDZ),	// CD lid state (DEBUG)
+	.CD_LID(cd_lid_bit),	// POCKET: FF011C bit 12
 	.CD_VIDEO_EN(CD_VIDEO_EN), .CD_FIX_EN(CD_FIX_EN), .CD_SPR_EN(CD_SPR_EN),
 	.CD_nRESET_Z80(CD_nRESET_Z80),
 	.CD_TR_WR_SPR(CD_TR_WR_SPR), .CD_TR_WR_PCM(CD_TR_WR_PCM),
@@ -633,7 +641,9 @@ cd_sys #(.MCLK(CD_MCLK)) cdsystem(
 	.DMA_WR_OUT(DMA_WR_OUT), .DMA_RD_OUT(DMA_RD_OUT),
 	.DMA_ADDR_IN(DMA_ADDR_IN),		// Used for reading
 	.DMA_ADDR_OUT(DMA_ADDR_OUT),	// Used for writing
-	.DMA_SDRAM_BUSY(DMA_SDRAM_BUSY | ADPCMA_RD_WAIT)     // POCKET: no ddram_wait, PCM writes go through the mux's queue
+	.DMA_SDRAM_BUSY(DMA_SDRAM_BUSY | ADPCMA_RD_WAIT),   // POCKET: no ddram_wait, PCM writes go through the mux's queue
+	.DBG_SECT(dbg_sect_cd),
+	.DBG_HOLD(dbg_hold)
 );
 `else
 assign {CD_VIDEO_EN, CD_FIX_EN, CD_SPR_EN} = 0;
@@ -792,13 +802,29 @@ wire nDTACK_ADJ = ~&{nSROMOE, nROMOE, nPORTOE, ~CD_EXT_RD, ~CD_TR_RD_FIX, ~CD_TR
                     : (CD_TR_RD_PCM) ? ~ADPCMA_RD_DTACK | nDTACK
                     : nDTACK;
 
+// POCKET: the UniBIOS's SYSTEM setting always matches CD/CDZ, see cd_bios_model
+wire [15:0] cpu_dataout;
+`ifdef NEOGEO_CD
+wire       dbg_bios_unibios;
+wire [15:0] dbg_bios_requested;
+cd_bios_model CD_BIOS_MODEL
+(
+	.clk(CLK_48M), .nRESET(nRESET),
+	.nAS(nAS), .nUDS(nUDS), .nLDS(nLDS), .M68K_RW(M68K_RW), .M68K_ADDR(M68K_ADDR),
+	.data_in(cpu_dataout), .system_cdz(SYSTEM_CDZ), .data_out(FX68K_DATAOUT),
+	.unibios(dbg_bios_unibios), .requested(dbg_bios_requested)
+);
+`else
+assign FX68K_DATAOUT = cpu_dataout;
+`endif
+
 cpu_68k M68KCPU(
 	.CLK(CLK_48M),
 	.CLK_EN_68K_P(CLK_EN_68K_P),
 	.CLK_EN_68K_N(CLK_EN_68K_N),
 	.nRESET(nRESET),
 	.M68K_ADDR(M68K_ADDR),
-	.FX68K_DATAIN(FX68K_DATAIN), .FX68K_DATAOUT(FX68K_DATAOUT),
+	.FX68K_DATAIN(FX68K_DATAIN), .FX68K_DATAOUT(cpu_dataout),
 	.nLDS(nLDS), .nUDS(nUDS), .nAS(nAS), .M68K_RW(M68K_RW),
 	.nDTACK(nDTACK_ADJ),	// nDTACK
 	.IPL2(1'b1), .IPL1(IPL_OUT[1]), .IPL0(IPL_OUT[0]),
@@ -1436,8 +1462,8 @@ assign dbg_wait = {dbg_at_req, dbg_zone, nAS, nRESET};
 // {fetch_err; transfer writes Z80, PCM, SPR, FIX; status latch; cur_lba; cur_status; status; command}
 assign dbg_cdd = {fetch_err, CD_TR_WR_Z80, CD_TR_WR_PCM, CD_TR_WR_SPR, CD_TR_WR_FIX, CDD_STATUS_LATCH, dbg_cur_lba, dbg_cur_status, CDD_STATUS, CDD_COMMAND_DATA};
 assign dbg_poll = cdd_poll & cdd_status_play;
-// The same expression as cd_sys's CD_LID port: FF011C bit 12. sim/topcd holds it against the 68K's read of FF011C
-wire dbg_cd_lid = ~status[15] ^ SYSTEM_CDZ;
+// What cd_sys's CD_LID port gets: FF011C bit 12. sim/topcd holds it against the 68K's read of FF011C
+wire dbg_cd_lid = cd_lid_bit;
 // The LC8951's cache changes banks: the only rise of CD_DATA_WR_READY out of reset. In a DMA reading the cache, the
 // rest of the DMA reads the next sector
 reg dbg_ready_d = 0;
@@ -1445,8 +1471,12 @@ always @(posedge CLK_48M) dbg_ready_d <= CD_DATA_WR_READY;
 wire dbg_swap_in_dma = CD_DATA_WR_READY & ~dbg_ready_d & DMA_RUNNING;
 // A DMA word's strobe that reaches no memory: outside the transfer window and PROG RAM, or its area not enabled
 wire dbg_dma_nowhere = DMA_RUNNING & DMA_WR_OUT & ~(CD_EXT_WR | CD_TR_WR_SPR | CD_TR_WR_PCM | CD_TR_WR_FIX | CD_TR_WR_Z80);
-// {swap in a DMA, DMA write to nowhere, 68K R/W, 68K address, command send, lid debug, CD_REGION, cd_speed, FF011C bit 12, CDZ}
-assign dbg_cd2 = {dbg_swap_in_dma, dbg_dma_nowhere, M68K_RW, M68K_ADDR[23:1], CDD_COMMAND_SEND, status[15], CD_REGION, cd_speed, dbg_cd_lid, SYSTEM_CDZ};
+// {hold ran out toggle, sector held, decoder interrupt masked, swap in a DMA, DMA write to nowhere, 68K R/W, 68K address, command send, lid debug, CD_REGION, cd_speed, FF011C bit 12, CDZ}
+assign dbg_sect = dbg_sect_cd;
+assign dbg_dreq = {req_valid, req_audio, req_lba};
+assign dbg_bus68 = {nUDS, nLDS, FX68K_DATAOUT};
+assign dbg_dmab = {DMA_RUNNING, DMA_WR_OUT & CD_EXT_WR, DMA_RD_OUT & CD_EXT_RD, DMA_ADDR_OUT[23:1], DMA_ADDR_IN[23:1]};
+assign dbg_cd2 = {dbg_bios_unibios, dbg_bios_requested, dbg_hold, dbg_swap_in_dma, dbg_dma_nowhere, M68K_RW, M68K_ADDR[23:1], CDD_COMMAND_SEND, status[15], CD_REGION, cd_speed, dbg_cd_lid, SYSTEM_CDZ};
 `endif
 `endif
 `ifdef NEOGEO_CD

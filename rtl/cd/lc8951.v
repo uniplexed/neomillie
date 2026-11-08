@@ -40,6 +40,8 @@ module lc8951(
 	input DMA_RUNNING,
 
 	output DECEN_OUT,	// POCKET: cd.sv holds a new sector while the decoder is on and its interrupt masked
+	output reg DBG_STAT3_TOG = 0,	// POCKET: toggles on each read of STAT3, the decoder interrupt's acknowledge; for the wait counter only
+	output reg DBG_LATE_TOG = 0,	// POCKET: toggles on a read of STAT3 with the decoder on that finds nVALST back at 1; likewise
 	output reg CDC_nIRQ	// Triggers when SECTOR_READY or DMA_RUNNING rises and IRQ enabled
 );
 
@@ -221,6 +223,8 @@ module lc8951(
 						begin
 							DOUT <= {nVALST, 7'b0000000};	// STAT3 - Reading clears the decoder IRQ
 							DECI_FLAG <= 0;
+							DBG_STAT3_TOG <= ~DBG_STAT3_TOG;	// POCKET
+							if (nVALST & DECEN) DBG_LATE_TOG <= ~DBG_LATE_TOG;	// POCKET
 						end
 					endcase
 				

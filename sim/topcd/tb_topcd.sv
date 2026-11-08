@@ -959,6 +959,11 @@ module tb_topcd;
         return t;
     endfunction
 
+    // Where the current run's record of the wait counter's file is on the bridge
+    function automatic logic [31:0] run_record();
+        return 32'h8000_0000 + 32'(dut.wait_ctr.run_no[2:0]) * 512;
+    endfunction
+
     function automatic void check_cd_words(input logic [31:0] w[$], input cd_tick_t t, input string how);
         check(w[23][7:0] == t.cmd[39:32] && w[24] == t.cmd[31:0], $sformatf("%s: last CDD command %08x %08x, the drive's %010x", how, w[23], w[24], t.cmd));
         check(w[25][7:0] == t.st[39:32] && w[26] == t.st[31:0], $sformatf("%s: last CDD status %08x %08x, the drive's %010x", how, w[25], w[26], t.st));
@@ -1074,8 +1079,9 @@ module tb_topcd;
             rd[c] = mux_n[c];
             ls[c] = mux_lost[c];
         end
-        repeat (110) @(posedge clk48);
-        host.bfm.read_file(32'h8000_0000, 128, w);
+        repeat (140) @(posedge clk48);
+        host.bfm.read_file(run_record(), 128, w);
+        check(w[105] == dut.wait_ctr.run_no, $sformatf("run %0d in the file, %0d in the counter", w[105], dut.wait_ctr.run_no));
         check_file(w, total, rd, ls, "file on exit");
         check_cd_words(w, cdt, "file on exit");
         check_layout3(w, cdt, "file on exit");
@@ -1101,6 +1107,10 @@ module tb_topcd;
             check(w[42] > 32'd2_800_000, $sformatf("worst host read %0d clocks, the bench had a host of 60 ms", w[42]));
             check(w[44] != 0 && w[47][31], $sformatf("%0d late polls with a host of 60 ms, first late %08x", w[44], w[47]));
             check(w[66] != 0, "no DMA word to PROG, and the program DMAs a sector there");
+            // cd.sv's sectors: the program's DMA took one from the cache
+            check(w[1][23:19] == 5'd6 && w[108] != 0, $sformatf("revision %0d, %0d sectors DMA'd", w[1][23:19], w[108]));
+            $display("sectors: %0d DMA'd, the last offered %08x; %0d BIOS read changes, the newest %08x", w[108], w[109], w[107], w[110]);
+            check(w[109] != 0, "no header of a sector offered");
         end
         wait_runs++;
         check(w[3] == dut.wait_ctr.worst, $sformatf("worst frame %0d in the file, %0d in the counter", w[3], dut.wait_ctr.worst));
@@ -1118,7 +1128,7 @@ module tb_topcd;
             rd[i] = mux_n[i];
             ls[i] = mux_lost[i];
         end
-        repeat (110) @(posedge clk48);
+        repeat (140) @(posedge clk48);
         saves = dut.wait_ctr.saves;
         logged = host.log_q.size();
         dut.wait_ctr.timer = 29'h0FFF_FFF0;
@@ -1138,11 +1148,27 @@ module tb_topcd;
         check(host.log_q[at].id == 16'h103, $sformatf("slot write of slot %x", host.log_q[at].id));
         check(host.log_q[at].offset == 0, $sformatf("slot write at offset %x", host.log_q[at].offset));
         check(host.log_q[at].addr == 32'h8000_0000, $sformatf("slot write from bridge address %x", host.log_q[at].addr));
-        check(host.log_q[at].len == 512, $sformatf("slot write of %0d bytes", host.log_q[at].len));
-        check_file(host.wlog, total, rd, ls, "slot write");
-        check_cd_words(host.wlog, cdt, "slot write");
-        check_layout3(host.wlog, cdt, "slot write");
+        check(host.log_q[at].len == 8192, $sformatf("slot write of %0d bytes", host.log_q[at].len));
+        begin
+            automatic int first = 128 * int'(dut.wait_ctr.run_no[2:0]);
+            w = host.wlog[first:first + 127];
+        end
+        check_file(w, total, rd, ls, "slot write");
+        check_cd_words(w, cdt, "slot write");
+        check_layout3(w, cdt, "slot write");
         repeat (3000) @(posedge clk74);
+        // The host's load of the file reaches the counter's RAM through core_top.v, and the numbering sees it. The record
+        // of the next run: that run overwrites it. The number is not taken now, as this run has started
+        begin
+            automatic logic [31:0] other [$];
+            automatic logic [31:0] addr = 32'h8000_0000 + 32'((int'(dut.wait_ctr.run_no[2:0]) + 1) % 8) * 512;
+            automatic logic [31:0] loaded = dut.wait_ctr.run_no + 32'd100;
+            host.bfm.write32(addr + 105 * 4, loaded);
+            repeat (20) @(posedge clk74);
+            host.bfm.read_file(addr, 128, other);
+            check(other[105] == loaded, $sformatf("loaded %0d into another record, it reads %0d", loaded, other[105]));
+            check(dut.wait_ctr.loaded_run == loaded, $sformatf("loaded %0d, the counter has %0d as the highest", loaded, dut.wait_ctr.loaded_run));
+        end
         check(dut.wait_ctr.saves == saves + 1 && dut.wait_ctr.last_err == 0,
               $sformatf("%0d saves, %0d expected, error %0d", dut.wait_ctr.saves, saves + 1, dut.wait_ctr.last_err));
         $display("wait counter: total %0d, frames %0d, worst frame %0d lost clocks, %0d mux cycles, %0d lost: agrees with the bench",
@@ -1577,13 +1603,13 @@ module tb_topcd;
     // a change restarts the core.
     // The host restores persistent settings before Reset Exit, so it writes them here while Reset Enter holds the
     // core. While held, the drive reads STOP at LBA 0 and keeps its last status and command words, and the video
-    // keeps its frames: what the wait counter's file of a run left with Quit shows, if Quit holds the core in reset
+    // keeps its frames, while the wait counter's record stays at the run's last frame
     task automatic check_settings_file(input logic [15:0] ff011c, input logic [31:0] want, input string how);
 `ifdef NEOGEO_WAIT_COUNTER
         logic [31:0] w [$];
         @(posedge dut.core_vblank);
-        repeat (110) @(posedge clk48);
-        host.bfm.read_file(32'h8000_0000, 128, w);
+        repeat (140) @(posedge clk48);
+        host.bfm.read_file(run_record(), 128, w);
         check(w[32] == want, $sformatf("%s: the settings word %08x, want %08x", how, w[32], want));
         check(w[32][1] == ff011c[12], $sformatf("%s: bit 12 is %b in the file, %b as the 68K read FF011C", how, w[32][1], ff011c[12]));
         check(w[32][5:4] == ff011c[9:8], $sformatf("%s: the region is %b in the file, %b as the 68K read FF011C", how, w[32][5:4], ff011c[9:8]));
@@ -1621,8 +1647,8 @@ module tb_topcd;
             check(dut.neogeo.CDD_COMMAND_DATA == cmd_was, $sformatf("in reset the last command is %010x, was %010x", dut.neogeo.CDD_COMMAND_DATA, cmd_was));
         end
         check(vb == 2, "no VBlank while the core is in reset");
-        // Taken while held, as the host restores it
-        check_settings_file(sys_config(1, 0, 2'd2), settings_word(1, 0, 0, 2, 1), "held in reset");
+        // The new values, taken while held as the host restores them, wait for the next run's record
+        check_settings_file(sys_config(0, 0, 2'd0), settings_word(0, 0, 0, 0, 0), "held in reset");
         host_cmd(16'h0011);
         wait_release(300.0);
         check(releases == rel + 1, "no release after Reset Exit");

@@ -607,7 +607,11 @@ assign bridge_rd_data = bridge_addr[31:24] == 8'hF8 ? cmd_bridge_rd_data : pocke
     wire    [4:0]   dbg_wait;
 `ifdef NEOGEO_CD
     wire   [113:0]  dbg_cdd;
-    wire    [33:0]  dbg_cd2;
+    wire    [53:0]  dbg_cd2;
+    wire    [36:0]  dbg_sect;
+    wire    [48:0]  dbg_dmab;
+    wire    [17:0]  dbg_bus68;
+    wire    [25:0]  dbg_dreq;
     wire   [319:0]  dbg_fetch;
     wire   [383:0]  dbg_dma;
 `endif
@@ -624,15 +628,16 @@ wait_counter #(.RD_WAIT(`NEOGEO_RD_WAIT), .LAYOUT(`WAIT_LAYOUT)) wait_ctr (
     .clk_48m(clk_48m), .nRESET(dbg_wait[0]), .nAS(dbg_wait[1]), .rom_zone(dbg_wait[2]), .at_req(dbg_wait[4:3]),
     .vblank(core_vblank), .c1_wait(cfg[30:28]),
     .clk_74a(clk_74a), .bridge_addr(bridge_addr), .bridge_rd(bridge_rd), .bridge_rd_data(wait_rd_data),
+    .bridge_wr(bridge_wr), .bridge_wr_data(bridge_wr_data),
     .run(reset_n & dataslot_allcomplete), .save_now(wait_save_now),
 `ifdef NEOGEO_CD
     .save_done(wait_save_done), .save_err(wait_save_err),
     .cdd(dbg_cdd), .disc_bin_size(disc_bin_size), .disc_reason(disc_reason),
-    .cd2(dbg_cd2), .fetch(dbg_fetch), .dma(dbg_dma)
+    .cd2(dbg_cd2), .fetch(dbg_fetch), .dma(dbg_dma), .sect(dbg_sect), .dmab(dbg_dmab), .bus68(dbg_bus68), .dreq(dbg_dreq)
 `else
     .save_done(target_dataslot_done), .save_err(target_dataslot_err),
     .cdd(114'd0), .disc_bin_size(32'd0), .disc_reason(4'd0),
-    .cd2(34'd0), .fetch(320'd0), .dma(384'd0)
+    .cd2(54'd0), .fetch(320'd0), .dma(384'd0), .sect(37'd0), .dmab(49'd0), .bus68(18'd0), .dreq(26'd0)
 `endif
 );
 `endif
@@ -651,7 +656,7 @@ neogeo_pocket neogeo (
 `ifdef NEOGEO_WAIT_COUNTER
     .dbg_wait(dbg_wait),
 `ifdef NEOGEO_CD
-    .dbg_cdd(dbg_cdd), .dbg_cd2(dbg_cd2), .dbg_fetch(dbg_fetch), .dbg_dma(dbg_dma),
+    .dbg_cdd(dbg_cdd), .dbg_cd2(dbg_cd2), .dbg_fetch(dbg_fetch), .dbg_dma(dbg_dma), .dbg_sect(dbg_sect), .dbg_dmab(dbg_dmab), .dbg_bus68(dbg_bus68), .dbg_dreq(dbg_dreq),
 `endif
 `endif
 `ifdef NEOGEO_CD

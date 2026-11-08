@@ -19,7 +19,7 @@
 //   fetch (CLK_48M)   fr_req toggles, one request outstanding; fr_done takes the value fr_req had when the
 //                     request was taken, once the read is over, and fr_err is set before. fr_slot, fr_offset and fr_bank_slot are held from the toggle to fr_done.
 //   wait (clk_74a)    ws_req is the wait counter's save_now: each rising edge asks for one write of slot
-//                     0x103, offset 0, from 0x8000_0000, 256 bytes; ws_done pulses at its end, with ws_err.
+//                     0x103, offset 0, from 0x8000_0000, 4,096 bytes; ws_done pulses at its end, with ws_err.
 // Order when idle: the fetch, unless a mount openfile is also pending (an openfile goes first and is never
 // split from the reads that follow it); then the mount; then the slot write. A done with err != 0 is passed
 // on and nothing else: the clients never mark a bank slot valid from it.
@@ -191,7 +191,7 @@ always @(posedge clk_74a) begin
                 target_dataslot_id         <= 16'h0103;
                 target_dataslot_slotoffset <= 0;
                 target_dataslot_bridgeaddr <= 32'h8000_0000;
-                target_dataslot_length     <= 32'd512;     // wait_counter.sv, layout 3
+                target_dataslot_length     <= 32'd8192;    // wait_counter.sv, layout 3: its 8 records and its timelines
                 state                      <= S_ISSUE;
             end
 `endif

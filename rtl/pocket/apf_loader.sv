@@ -310,7 +310,7 @@ always @(posedge clk_74a) begin
 `ifdef NEOGEO_WAIT_COUNTER
         else if (datatable_q == 32'h103) begin      // wait_counter.sv
             datatable_addr <= datatable_addr + 1'b1;
-            datatable_data <= CD_BUILD ? 32'd512 : 32'd256;     // layout 3 or layout 1
+            datatable_data <= CD_BUILD ? 32'd8192 : 32'd256;    // layout 3's 8 records and timelines, or layout 1
             datatable_wren <= 1;
         end
 `endif

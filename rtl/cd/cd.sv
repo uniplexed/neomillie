@@ -101,7 +101,10 @@ module cd_sys(
 	output reg [23:0] DMA_ADDR_IN,	// Used for reading
 	output reg [23:0] DMA_ADDR_OUT,	// Used for writing
 	
-	input DMA_SDRAM_BUSY
+	input DMA_SDRAM_BUSY,
+
+	output [36:0] DBG_SECT,	// POCKET: {sector DMA'd, skipped, lost toggles; a late STAT3 read toggle; the lost one's {interrupt dropped, header}}, wait counter only
+	output [2:0] DBG_HOLD	// POCKET: {toggles when a hold ends at MASK_HOLD_MAX, a sector is held, the decoder on with its interrupt masked}, for the wait counter only
 );
 	parameter MCLK = 96671316;
 
@@ -140,6 +143,8 @@ module cd_sys(
 	wire CDC_nIRQ;
 	wire [31:0] HEADER_DIN;
 	wire LC8951_DECEN;	// POCKET
+	wire LC8951_STAT3_TOG;	// POCKET
+	wire LC8951_LATE_TOG;	// POCKET
 
 	lc8951 LC8951(
 		.nRESET(nRESET),
@@ -154,6 +159,8 @@ module cd_sys(
 		.SECTOR_READY(SECTOR_READY),
 		.DMA_RUNNING(DMA_RUNNING),
 		.DECEN_OUT(LC8951_DECEN),	// POCKET
+		.DBG_STAT3_TOG(LC8951_STAT3_TOG),	// POCKET
+		.DBG_LATE_TOG(LC8951_LATE_TOG),	// POCKET
 		.CDC_nIRQ(CDC_nIRQ)
 	);
 
@@ -185,6 +192,8 @@ module cd_sys(
 	// POCKET: the longest a sector waits for the decoder interrupt's unmask. A program may keep it masked and poll IFSTAT.
 	localparam [23:0] MASK_HOLD_MAX = MCLK / 20;	// 50 ms
 	reg [23:0] MASK_HOLD_CNT;
+	reg DBG_HOLD_TOG = 0;	// POCKET
+	assign DBG_HOLD = {DBG_HOLD_TOG, MASK_HOLD_CNT != 0, LC8951_DECEN & ~(REG_FF0002[10] & REG_FF0002[8])};
 
 	reg FORCE_WR;
 	reg [2:0] LOADING_STATE;
@@ -236,6 +245,41 @@ module cd_sys(
 	reg [31:0] DMA_COUNT_RUN;
 
 	localparam DMA_RW_CYCLES = MCLK / 4800000; // TODO: Tune this
+
+	// POCKET: what became of each sector the decoder offered, for the wait counter. At a flip the sector leaving the read bank
+	// was DMA'd from the cache, or skipped (STAT3 read, no DMA: the program looked and passed), or lost (neither: the program
+	// never took it, and the next one replaced it). Real hardware keeps several sectors in its buffer; this cache keeps one.
+	// For a lost one: whether the decoder's interrupt reached CD_IRQ_FLAGS, or fell while FF0002 had it off and was dropped.
+	reg        DBG_FLIP = 0;
+	reg [31:0] DBG_OUT_HEAD = 0;
+	reg        DBG_PRES = 0, DBG_ACK = 0, DBG_TAKEN = 0, DBG_IRQ = 0, DBG_DROP = 0, DBG_STAT3_D = 0;
+	reg        DBG_TAKEN_TOG = 0, DBG_SKIP_TOG = 0, DBG_LOST_TOG = 0;
+	reg [33:0] DBG_LOST_INFO = 0;
+	wire       DBG_IRQ_FALL = CLK_68KCLK_EN & CDC_nIRQ_PREV & ~CDC_nIRQ;
+	// [33]: toggles on a STAT3 read that finds the status no longer valid (nVALST back at 1, 1.8 ms after the sector).
+	// [32:0]: the last sector offered, at the flip that ended it: {DMA'd, header}
+	assign DBG_SECT = {DBG_TAKEN_TOG, DBG_SKIP_TOG, DBG_LOST_TOG, LC8951_LATE_TOG, DBG_LOST_INFO[32:0]};
+
+	always @(posedge clk_sys) begin
+		DBG_STAT3_D <= LC8951_STAT3_TOG;
+		if (DBG_FLIP) begin
+			if (DBG_PRES) begin
+				if (DBG_TAKEN) DBG_TAKEN_TOG <= ~DBG_TAKEN_TOG;
+				else if (DBG_ACK) DBG_SKIP_TOG <= ~DBG_SKIP_TOG;
+				else DBG_LOST_TOG <= ~DBG_LOST_TOG;
+				DBG_LOST_INFO <= {DBG_IRQ, DBG_TAKEN, DBG_OUT_HEAD};	// the last sector offered: {its interrupt reached, DMA'd, header}
+			end
+			// The sector now in the read bank: its interrupt rises after this clock
+			DBG_PRES <= LC8951_DECEN;
+			{DBG_ACK, DBG_TAKEN, DBG_IRQ, DBG_DROP} <= 0;
+		end else begin
+			if (LC8951_STAT3_TOG != DBG_STAT3_D) DBG_ACK <= 1;
+			if (DMA_STATE == DMA_STATE_CACHE_RD) DBG_TAKEN <= 1;
+			if (DBG_IRQ_FALL & REG_FF0002[10] & REG_FF0002[8]) DBG_IRQ <= 1;
+			if (DBG_IRQ_FALL & ~(REG_FF0002[10] & REG_FF0002[8])) DBG_DROP <= 1;
+		end
+	end
+
 	
 	reg CD_DATA_WR_PREV;
 	wire CD_DATA_WR_START =  CD_DATA_WR & ~CD_DATA_WR_PREV;
@@ -243,6 +287,7 @@ module cd_sys(
 
 	always @(posedge clk_sys)
 	begin
+		DBG_FLIP <= 0;	// POCKET
 		if (!nRESET)
 		begin
 			FORCE_WR <= 0;
@@ -295,7 +340,11 @@ module cd_sys(
 					if (LC8951_DECEN & ~(REG_FF0002[10] & REG_FF0002[8]) & (MASK_HOLD_CNT < MASK_HOLD_MAX)) begin
 						MASK_HOLD_CNT <= MASK_HOLD_CNT + 1'b1;
 					end else begin
+						// Here with the decoder on and its interrupt masked, the count is at MASK_HOLD_MAX: the hold ran out
+						if (LC8951_DECEN & ~(REG_FF0002[10] & REG_FF0002[8])) DBG_HOLD_TOG <= ~DBG_HOLD_TOG;
 						MASK_HOLD_CNT <= 0;
+						DBG_FLIP <= 1;					// POCKET
+						DBG_OUT_HEAD <= HEADER_DIN;		// POCKET: the header of the sector leaving
 						SECTOR_FILLED[CACHE_RD_BANK] <= 0;
 						SECTOR_READY <= 1;
 						CACHE_RD_BANK <= ~CACHE_RD_BANK;

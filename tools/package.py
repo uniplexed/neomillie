@@ -88,8 +88,8 @@ def members(rev, version):
         wait_counter = "NEOGEO_WAIT_COUNTER" in (ROOT / f"synth/{rev}/{rev}.qsf").read_text()
         if p.name == "data.json" and wait_counter:
             j = json.loads(data)
-            # The CD core's file is 512 bytes, as rtl/cd/cd_host.sv's slot write and rtl/pocket/apf_loader.sv's table word
-            j["data"]["data_slots"].append(WAIT_SLOT if platform == "ng" else {**WAIT_SLOT, "size_maximum": 512})
+            # The CD core's file is 8 records of 512 bytes, as rtl/cd/cd_host.sv's slot write and rtl/pocket/apf_loader.sv's table word. A new name: the host keeps an old file's size
+            j["data"]["data_slots"].append(WAIT_SLOT if platform == "ng" else {**WAIT_SLOT, "size_maximum": 8192, "filename": "waitt.sav"})
             data = json.dumps(j, indent=4)
         if p.name == "interact.json" and platform == "ngcd" and not wait_counter:
             # Debug items. Without the counter the speed follows CD/CDZ (rtl/top/neogeo_pocket.sv), and the lid stays closed

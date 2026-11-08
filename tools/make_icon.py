@@ -10,15 +10,16 @@
 icon_bytes(cd) is the file icon.bin of a core folder, in Analogue's format (packaging-a-core, "Graphical Asset
 Formats"): 36 x 36 pixels of 16 bits, brightness in the upper 8 bits (fully on is 0xFF00), stored rotated 90
 degrees counter-clockwise. The brightness byte comes first in the file, as in Analogue's template icon.
+On the Pocket's light menu fully on is dark ink and 0 is the menu's own background, so a dark mark takes a high value.
 The art is drawn here as text, one character a pixel, so no image library is needed; make_logo.py colours the
 same marks for the project's logo.
 """
 import sys
 
 SIZE = 36
-# Brightness of each mark of the art: "." is off and the outside, "#" her cream fur, "+" and "-" her tan ears
-# and their darker strands, "o" an eye with "*" its glint, "n" her nose and mouth, "h" the harness, "t" her tongue
-LEVEL = {".": 0, "#": 255, "+": 135, "-": 80, "o": 0, "*": 255, "n": 0, "h": 30, "t": 110}
+# Value of each mark of the art: "." is off and the outside, "#" her cream fur, faint so her outline still shows, "+" and "-"
+# her tan ears and their darker strands, "o" an eye with "*" its glint, "n" her nose and mouth, "h" the harness, "t" her tongue
+LEVEL = {".": 0, "#": 40, "+": 120, "-": 175, "o": 255, "*": 0, "n": 255, "h": 225, "t": 145}
 
 CART = [
     "....................................",
@@ -108,10 +109,10 @@ def selfcheck():
     assert len(cart) == len(cd) == SIZE * SIZE * 2 == 2592
     assert cart != cd
     assert set("".join(CART)) <= set(LEVEL) and set("".join(DISC)) <= set("/+-#.")
-    # her left eye's glint is on at (12, 12); rotated counter-clockwise it is at x = 12, y = SIZE-1-12
+    # her left eye's glint is off at (12, 12), in an eye fully on; rotated counter-clockwise it is at x = 12, y = SIZE-1-12
     assert CART[12][12] == "*" and CART[13][13] == "o"
     at = ((SIZE - 1 - 12) * SIZE + 12) * 2
-    assert cart[at:at + 2] == bytes((255, 0)) and cart[((SIZE - 1 - 13) * SIZE + 13) * 2] == 0
+    assert cart[at:at + 2] == bytes((0, 0)) and cart[((SIZE - 1 - 13) * SIZE + 13) * 2] == 255
     # the first rotated row is the last column of the art, all off
     assert cart[:SIZE * 2] == bytes(SIZE * 2)
 
