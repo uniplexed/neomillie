@@ -8,10 +8,13 @@ Pocket hardware layer.
 | Core | What it runs | State |
 |---|---|---|
 | `uniplexed.NeoMillie` | MVS and AES cartridge games | Works on the games tried |
-| `uniplexed.NeoMillieCD` | Neo Geo CD discs, at 1x or as a CDZ at 2x | Early: works on the discs below, more testing needed |
+| `uniplexed.NeoMillieCD` | Neo Geo CD discs, with two automatic modes: CD at 1x and CDZ at 2x | Works on the discs below |
 
-This is the first public release. Everything here was tested on **one Pocket**, so memory timing across units and most
-of the library are unknown. Reports are welcome in the issues: say which core, version, BIOS, game and setting.
+**New in NeoMillieCD 0.5.1: two automatic modes.** Choose CD at 1x or CDZ at 2x with the CD/CDZ setting and the core sets up
+the UniBIOS by itself, with nothing to change in its menu. Samurai Shodown RPG now loads on its first Start Game in both
+modes, The King of Fighters '97 plays in both, and The King of Fighters '95 plays in CDZ mode with its CD audio.
+
+Tested on one Pocket. Reports are welcome in the issues: say which core, version, BIOS, game and setting.
 
 No BIOS, ROMs or discs are included, and none will be. You need your own.
 
