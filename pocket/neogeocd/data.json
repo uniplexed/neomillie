@@ -55,7 +55,8 @@
                 "name": "Memory Card",
                 "id": "0x101",
                 "required": false,
-                "parameters": 36,
+                "parameters": 32,
+                "filename": "uni-bioscd.sav",
                 "nonvolatile": true,
                 "extensions": [
                     "sav"

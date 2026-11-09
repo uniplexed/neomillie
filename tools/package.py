@@ -54,7 +54,7 @@ No BIOS, ROMs or discs are included. Put these in Assets/ngcd/common/ on the SD 
   (top-sp1.bin and front-sp1.bin can be picked in the menu, untested at 2x; neocd.bin stops at its CDZ disc protection check)
 Each disc goes in its own folder there, as a .cue with one .bin in MODE1/2352. cd_convert.py, attached to the release, makes them from ISO, WAV or CHD.
 Pick the .cue on the Disc slot. CD/CDZ off reads the disc at 1x, on at 2x; changing it restarts the core.
-Saves go to Saves/ngcd/{core}/.
+The memory card is Saves/ngcd/common/uni-bioscd.sav, written when you Quit the core.
 Known issues and tested titles: https://github.com/uniplexed/neomillie
 """
 README = """Neo Geo cartridge core for the Analogue Pocket, built from the MiSTer Neo Geo core. GPL-3.0-or-later.

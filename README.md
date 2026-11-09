@@ -10,7 +10,11 @@ Pocket hardware layer.
 | `uniplexed.NeoMillie` | MVS and AES cartridge games | Works on the games tried |
 | `uniplexed.NeoMillieCD` | Neo Geo CD discs, with two automatic modes: CD at 1x and CDZ at 2x | Works on the discs below |
 
-**New in NeoMillieCD 0.5.1: two automatic modes.** Choose CD at 1x or CDZ at 2x with the CD/CDZ setting and the core sets up
+**New in NeoMillieCD 0.5.2: memory card saves reach the SD card.** On 0.5.0 and 0.5.1 a game saved to the card and could
+load it until you left the core, but the file was not written on Quit, so the save was lost. Please update. Saves made on
+those versions cannot be recovered.
+
+**Since NeoMillieCD 0.5.1: two automatic modes.** Choose CD at 1x or CDZ at 2x with the CD/CDZ setting and the core sets up
 the UniBIOS by itself, with nothing to change in its menu. Samurai Shodown RPG now loads on its first Start Game in both
 modes, The King of Fighters '97 plays in both, and The King of Fighters '95 plays in CDZ mode with its CD audio.
 
@@ -56,8 +60,8 @@ to set. The SYSTEM item in the UniBIOS's own menu has no effect in this core, wh
 
 ### Tested discs
 
-All with `uni-bioscd.rom`, on a Pocket. "Build" is the version the row was run on: 0.5.1 is this release, and 0.3.5 is
-a debug build with the same fix for the 2x stop, plus a counter and a separate speed setting, so its 1x rows have
+All with `uni-bioscd.rom`, on a Pocket. "Build" is the version the row was run on: 0.5.1 has the same core as this release, 0.5.2, which only changes how the
+memory card file is named, and 0.3.5 is a debug build with the same fix for the 2x stop, plus a counter and a separate speed setting, so its 1x rows have
 CD/CDZ on, which this release does not offer at 1x.
 
 | Disc | Setting | Result | Build |
@@ -126,7 +130,7 @@ not keep, and was not run on a Pocket in that form. CHDs made by other tools hav
 | LO | yes | `000-lo.lo` |
 | Disc | no | Picked by you: a `.cue`, or a raw `.bin` |
 | Disc data | no | Not yours to pick: the core opens the CUE's BIN here |
-| Memory Card | no | Up to 8 KB, in `Saves/ngcd/common/`, one file per BIOS, named after it |
+| Memory Card | no | Up to 8 KB, `Saves/ngcd/common/uni-bioscd.sav`, written when you Quit the core. One card, whichever BIOS is picked |
 
 Menu: Reset Core, CD/CDZ, Region (US, EU, JP, AS), 304 or 320 wide, and four aspect ratios for the scaler.
 
