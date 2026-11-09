@@ -66,7 +66,7 @@ CD/CDZ on, which this release does not offer at 1x.
 
 | Disc | Setting | Result | Build |
 |---|---|---|---|
-| The King of Fighters '95 | CD/CDZ on, 2x | Plays with music; see "Known issues" | 0.4.1 |
+| The King of Fighters '95 | CD/CDZ on, 2x | Plays with music | 0.4.1 |
 | The King of Fighters '97 | CD/CDZ on, 2x | A fight reached, music fine | 0.5.1 |
 | The King of Fighters '97 | CD/CDZ off, 1x | A fight reached | 0.5.1 |
 | The King of Fighters '99 | CD/CDZ on, 2x | A fight finished, no cuts in the music heard | 0.4.0 |
@@ -90,9 +90,6 @@ Converted but not yet tried: Crossed Swords II, Fatal Fury 3, Pulstar. Every run
 
 ### Known issues
 
-- **A silent run:** The King of Fighters '95 ran once with no CD music, on 0.4.1, and had it after a restart. It did not
-  happen again, and the cause is not known. If it happens to you, try **Reset Core**, and please report what you did
-  before it.
 - **The fix for 2x is a tolerance:** the BIOS's directory scan can keep the decoder interrupt masked for longer than a
   sector takes at 2x (8 to 9 ms against 6.67 ms). So this core holds a new sector while that interrupt is masked, for
   at most 50 ms, which real hardware does not do. Simulation found no BIOS or game that depends on the opposite, but
