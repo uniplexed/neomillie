@@ -22,6 +22,13 @@ Tested on one Pocket. Reports are welcome in the issues: say which core, version
 
 No BIOS, ROMs or discs are included, and none will be. You need your own.
 
+## Supporting the project
+
+NeoMillie is free and will stay free. If it is useful to you, a donation helps pay for the test hardware and the time
+that goes into each release.
+
+[![Donate with PayPal](https://www.paypalobjects.com/en_GB/i/btn/btn_donate_LG.gif)](https://www.paypal.com/donate/?hosted_button_id=A72RAVHX98628)
+
 ## Installing
 
 Download the zips from [Releases](https://github.com/uniplexed/neomillie/releases) and unzip each to the root of the

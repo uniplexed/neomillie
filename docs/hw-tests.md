@@ -791,3 +791,7 @@ Slack in ns, `neogeocd_wait`:
 | bridge_spiclk | +10.533 | +10.782 | +12.256 | +12.382 | +0.420 | +0.407 | +0.181 | +0.172 |
 
 The file is 512 bytes now, layout 3. **Delete `Saves/ngcd/uniplexed.NeoGeoCDWait/wait.sav` before the first run**: what the host does with an older, shorter file is not known. `tools/check_wait_save.py` reads all three layouts, and says what a 256-byte layout 3 file lacks. Leave the core with **Quit**, and take the file off the card before the next run.
+
+---
+
+NeoMillie is free. If it is useful to you, [donate with PayPal](https://www.paypal.com/donate/?hosted_button_id=A72RAVHX98628).
