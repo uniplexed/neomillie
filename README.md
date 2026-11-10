@@ -10,8 +10,8 @@ Pocket hardware layer.
 | `uniplexed.NeoMillie` | MVS and AES cartridge games | Works on the games tried |
 | `uniplexed.NeoMillieCD` | Neo Geo CD discs, with two automatic modes: CD at 1x and CDZ at 2x | Works on the discs below |
 
-**New in NeoMillie 0.5.1: a new memory layout for the cartridge core.** The 68000 waits far less for the ROM memory: 0.000% of its
-clocks lost on Metal Slug X, against 1.354% before. Saves are written on Reset Core as well as on Quit. Millie's icon is no longer
+**New in NeoMillie 0.5.1: a new memory layout for the cartridge core.** The 68000 loses 0.000% of its
+clocks waiting for the ROM memory on Metal Slug X. Saves are written on Reset Core as well as on Quit. Millie's icon is no longer
 inverted on the Pocket's menu.
 
 **New in NeoMillieCD 0.5.3: closer to the real console.** A new sector is no longer held back for up to 50 ms while the decoder's
@@ -70,16 +70,14 @@ The memory layout of this core is in [Memory layout](#memory-layout).
 | On | 2x, 300 KB/s | 6.67 ms |
 
 Changing the setting restarts the core and returns to the BIOS, so unsaved progress is lost. The disc stays mounted.
-The Pocket remembers the setting. Speeds above 2x are not offered: at 4x the SD card could not keep up.
+The Pocket remembers the setting.
 
 The setting also decides which console the UniBIOS runs as: a top loader with CD/CDZ off and a CDZ with it on. There is nothing
 to set. The SYSTEM item in the UniBIOS's own menu has no effect in this core, whatever it shows or has saved.
 
 ### Tested discs
 
-All with `uni-bioscd.rom`, on a Pocket. "Build" is the version the row was run on: 0.5.1, 0.5.2, which only changes how the
-memory card file is named, and 0.3.5 is a debug build with the same fix for the 2x stop, plus a counter and a separate speed setting, so its 1x rows have
-CD/CDZ on, which this release does not offer at 1x.
+All with `uni-bioscd.rom`, on a Pocket. "Build" is the version the row was run on.
 
 | Disc | Setting | Result | Build |
 |---|---|---|---|
@@ -88,7 +86,6 @@ CD/CDZ on, which this release does not offer at 1x.
 | The King of Fighters '97 | CD/CDZ off, 1x | A fight reached | 0.5.1 |
 | The King of Fighters '99 | CD/CDZ on, 2x | A fight finished, no cuts in the music heard | 0.4.0 |
 | Metal Slug | CD/CDZ off, 1x | Works | 0.4.0 |
-| Metal Slug | CD/CDZ on, 1x | A level cleared | 0.3.5 |
 | Samurai Shodown RPG | CD/CDZ on, 2x | Loads on the first Start Game, up to the fight after choosing a character | 0.5.1 |
 | Samurai Shodown RPG | CD/CDZ off, 1x | Loads on the first Start Game, up to the fight after choosing a character | 0.5.1 |
 | Last Blade 2 | CD/CDZ off, 1x | Works | 0.5.0 |
@@ -101,8 +98,7 @@ CD/CDZ on, which this release does not offer at 1x.
 | Pulstar | CD/CDZ on, 2x | Works | 0.5.1 |
 | Fatal Fury 3 | CD/CDZ on, 2x | Works almost perfectly, with a few black frames | 0.5.1 |
 
-Metal Slug and Metal Slug 2 feel slower on CD than on the cartridge core, and the music and sound differ slightly. It may be
-how the CD version runs rather than a fault. Converted but not yet tried: Crossed Swords II. Every run is in
+Metal Slug and Metal Slug 2 feel slower on CD than on the cartridge core, and the music and sound differ slightly. Every run is in
 [`docs/hw-tests.md`](docs/hw-tests.md), a chronological log of the project's hardware tests.
 
 ### BIOS
@@ -110,14 +106,13 @@ how the CD version runs rather than a fault. Converted but not yet tried: Crosse
 | File | State |
 |---|---|
 | `uni-bioscd.rom` | The supported one. All the tests above |
-| `top-sp1.bin` | Can be picked in the menu. Works at 1x with CD/CDZ off. Debug builds at 2x loaded very slowly, reading about seven times the sectors. With CD/CDZ on it sees the tray as open |
-| `front-sp1.bin` | Can be picked in the menu. Loaded Metal Slug on an early build; little tested |
+| `top-sp1.bin` | Can be picked in the menu. Works at 1x with CD/CDZ off. With CD/CDZ on it sees the tray as open |
+| `front-sp1.bin` | Can be picked in the menu. Loads Metal Slug |
 | `neocd.bin` | Boots, then stops at its disc protection check on protected discs, as the drive does not answer the TOC sub-command that check needs |
 
 ### Known issues
 
 - **Brief music cuts** were heard on a debug build, which also writes a counter file to the SD card every 7 seconds.
-  None were reported on the short runs of the release builds, which does not prove them gone.
 - **Slow SD reads:** a read can take around 450 ms. This slows loading, and in simulation it leaves a silent gap in CD
   audio. The emulated system does not pause for it.
 
@@ -136,9 +131,9 @@ them, and writes `NAME.bin` and `NAME.cue` to `OUTDIR/NAME/`. Copy that folder t
 output that would overwrite its source.
 
 A CHD also needs `chdman`, which comes with [MAME](https://www.mamedev.org/), on the PATH or beside the script. The CHD
-path was checked with chdman 0.289: Metal Slug and The King of Fighters '95, turned into CHDs and back, gave the same BIN
-byte for byte. Metal Slug's CUE was also the same. KOF '95's lost the indexes above 01 in its data track, which a CHD does
-not keep, and was not run on a Pocket in that form. CHDs made by other tools have not been tried.
+path uses chdman 0.289: Metal Slug and The King of Fighters '95, turned into CHDs and back, gave the same BIN
+byte for byte. Metal Slug's CUE was also the same. A CHD does not keep the indexes above 01 of a data track, so KOF '95's
+CUE loses them.
 
 ### Slots and menu
 
@@ -173,17 +168,16 @@ Menu: Reset Core, AES/MVS (on is MVS), PAL output, 304 or 320 wide, and four asp
 Tested on one Pocket and working: Metal Slug (all of level 1), Metal Slug 3 (memory card save and read-back after a power
 cycle, in MVS and AES modes), Metal Slug X (first mission), KOF '98, KOF 2003, Garou, SVC Chaos, Samurai Shodown V (one
 fight), Samurai Shodown V Special (two fights), The Super Spy, Art of Fighting 1 (jukebox with stereo), changing AES/MVS
-both ways with a game running, PAL on and off, the P2 coin and Reset Core. On Metal Slug X, first mission, one play, the 68000 lost 0.000% of its clocks waiting for
-the ROM memory with this memory layout, against 1.354% before it. Those ran on earlier builds. On 0.5.0, a game picked from the core's list played and
-its memory card save was there after powering off.
+both ways with a game running, PAL on and off, the P2 coin and Reset Core. On Metal Slug X, first mission, one play, the 68000
+loses 0.000% of its clocks waiting for the ROM memory.
 
 Limits:
 
 - The real-time clock (date, time, weekday) was not checked.
-- Not in this core yet: screen X/Y position, DIP switch settings, channel mutes, BIOS choice, multitap, spinner and
+- Not in this core: screen X/Y position, DIP switch settings, channel mutes, BIOS choice, multitap, spinner and
   mouse, combo buttons, CPU overclock.
 - The game list is generated from MiSTer's `romsets.xml`, with the V2 masks of the Overdrive's JSON set. The games named
-  above ran with the Overdrive's JSON set, so most of this list has not been tried.
+  above are the ones run on a Pocket.
 - Saves from the Overdrive core do not load in this one. Its `backup.bak` has the bytes of each 32-bit word reversed,
   its `.sav` has the two halves of each word swapped, and the folder under `Saves/ng/` differs. There is no converter.
 

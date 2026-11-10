@@ -146,7 +146,7 @@ footer{margin-top:40px;color:var(--muted);font-size:13px}
 <tr><td>Fix layer, one 16-bit read every 8 pixels</td><td>SRAM copy of the S ROM if it is 128 KB or less; otherwise <b>CRAM0</b> through a 2 KB read cache, shared with the 68K</td><td>SRAM, its own arbiter</td></tr>
 <tr><td>Z80 program</td><td>The first 128 KB of the M1 ROM (256 KB with a larger S) from an SRAM copy; the rest from <b>CRAM0</b> through a 4 KB read cache</td><td>64 KB of RAM in M10K, loaded from the disc: the Z80 never touches CRAM0</td></tr>
 <tr><td>Readers of CRAM0 besides the 68K</td><td>Fix and Z80 only for what the SRAM does not hold, plus SFIX and the MVS backup RAM, in the window after each PCK2</td><td>None while a game runs; the CD's writes queue behind the 68K</td></tr>
-<tr><td>68K clocks lost to waits</td><td>0.000% on Metal Slug X, first mission. The layout before this one lost 1.354%, worst frame 2.295%</td><td>0.000%</td></tr>
+<tr><td>68K clocks lost to waits</td><td>0.000% on Metal Slug X, first mission</td><td>0.000%</td></tr>
 </table></div>
 <p>The Z80 is the part the cart core cannot copy from the CD core: a Neo Geo CD's sound program is 64 KB of RAM, which fits in M10K, while a cartridge's is a ROM of up to 512 KB. The cart core keeps the first part of it, and of the fix, in the SRAM, and caches what stays on CRAM0, so the 68K finds that chip free. After a load a copy engine fills the SRAM, about 46 ms, with the core held in reset.</p>
 
@@ -175,16 +175,16 @@ footer{margin-top:40px;color:var(--muted);font-size:13px}
 </ul>
 <h3>One registered master per chip</h3>
 <p>Each chip has a fixed priority. CRAM0, cart: loader, save path, posted backup write, 68K, fix, Z80, S and M1 copy; CD: loader, 68K, CD write queue. CRAM1: loader &gt; CD write &gt; ADPCM-A &gt; ADPCM-B. SDRAM: sprite &gt; CD read &gt; loader &gt; CD write, with refresh spaced by a watchdog. SRAM, cart: fix, copy write, Z80; CD: fix &gt; CD read &gt; CD write. Requests stay pending until served. CD writes are posted to a queue, and PCM and FIX writes hold the 68K's DTACK until they reach the chip.</p>
-<h3>Owner's decisions for the CD core</h3>
+<h3>Choices in the CD core</h3>
 <ul>
 <li>Z80 RAM in M10K, as MiSTer: 64 blocks.</li>
-<li>PROG RAM in CRAM0, its cost checked with the 68K wait counter.</li>
+<li>PROG RAM in CRAM0, its cost measured with the 68K wait counter.</li>
 </ul>
 <h3>What the Pocket cannot hold, and what it gains</h3>
 <ul>
 <li>C ROM up to 64 MB (MiSTer up to 128 MB with two SDRAM modules); V ROMs up to 16 MB (MiSTer's DDR3 has room for more); P ROM up to 8 MB plus a 1 MB PROG1.</li>
 <li>No ARM: CD sectors come from the host over the APF bridge, a random read costing up to about 90 ms. <code>cd_fetch</code> keeps a 4-sector bank, prefetches the next three, and reads a seek's target while the drive seeks.</li>
-<li>M10K is the tight resource: 281 of 292 in the CD release. The LC8951's real buffer (a ring of 16 KB or more, instead of the 2-sector cache) needs about 16 more blocks; moving the memory card to external memory is the planned way to find them.</li>
+<li>M10K is the tight resource: 281 of 292 in the CD release. The LC8951's cache is 2 sectors.</li>
 </ul>
 
 <footer>NeoMillie and NeoMillieCD. Generated from the repository's RTL and fit reports; MiSTer details from the vendored NeoGeo_MiSTer source.</footer>
