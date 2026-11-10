@@ -8,6 +8,8 @@ Everything here comes from the RTL in this repository: `rtl/pocket/mem_map.svh` 
 
 ![Neo Geo components and the Pocket memories they use in each mode](memory-components.svg)
 
+[memory-architecture.html](memory-architecture.html), a page to open in a browser, sets the Pocket layout beside MiSTer's, core by core.
+
 ## The chips
 
 | Name | Part | Size | Bus | Controller | Clock |

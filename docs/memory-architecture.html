@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neo Geo memory architecture</title>
+<style>
+:root{--bg:#fbfaf7;--fg:#24231f;--muted:#6b6962;--line:#dcd9d0;--card:#ffffff;--rom:#eeedfe;--rom-ink:#3c3489;--ram:#e1f5ee;--ram-ink:#085041;--chip:#f1efe8;--chip-ink:#444441;--accent:#534ab7}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1c1b19;--fg:#ecebe6;--muted:#a3a19a;--line:#3a3935;--card:#252421;--rom:#3c3489;--rom-ink:#eeedfe;--ram:#085041;--ram-ink:#e1f5ee;--chip:#444441;--chip-ink:#f1efe8;--accent:#afa9ec}}
+:root[data-theme="dark"]{--bg:#1c1b19;--fg:#ecebe6;--muted:#a3a19a;--line:#3a3935;--card:#252421;--rom:#3c3489;--rom-ink:#eeedfe;--ram:#085041;--ram-ink:#e1f5ee;--chip:#444441;--chip-ink:#f1efe8;--accent:#afa9ec}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:980px;margin:0 auto;padding:32px 16px 64px}
+h1{font-size:28px;font-weight:600;margin:0 0 4px}
+h2{font-size:21px;font-weight:600;margin:40px 0 8px;padding-top:8px;border-top:1px solid var(--line)}
+h3{font-size:16px;font-weight:600;margin:20px 0 6px}
+p,li{color:var(--fg)}
+.lede{color:var(--muted);margin:0 0 16px}
+code{font:13.5px ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--chip);color:var(--chip-ink);padding:1px 5px;border-radius:4px}
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:12px 0}
+@media (max-width:720px){.vs{grid-template-columns:1fr}}
+.side{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.side h3{margin:0 0 10px}
+.chip{border:1px solid var(--line);border-radius:8px;margin:0 0 10px;overflow:hidden}
+.chip>div:first-child{background:var(--chip);color:var(--chip-ink);padding:6px 10px;font-weight:600;font-size:14px;display:flex;justify-content:space-between;gap:8px}
+.chip>div:first-child span{font-weight:400}
+.reg{display:flex;justify-content:space-between;gap:8px;padding:5px 10px;font-size:13.5px;border-top:1px solid var(--line)}
+.reg.rom{background:var(--rom);color:var(--rom-ink)}
+.reg.ram{background:var(--ram);color:var(--ram-ink)}
+.reg span:last-child{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;white-space:nowrap}
+.legend{display:flex;gap:16px;font-size:13px;color:var(--muted);margin:4px 0 0}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:6px;border:1px solid var(--line)}
+table{width:100%;border-collapse:collapse;font-size:14px;margin:10px 0}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--muted)}
+.wrap{overflow-x:auto}
+footer{margin-top:40px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+<h1>Neo Geo memory architecture: MiSTer and Analogue Pocket</h1>
+<p class="lede">Where the cart and CD cores keep each ROM and RAM on the two platforms, and why the Pocket port is laid out the way it is. The MiSTer side is read from <code>NeoGeo_MiSTer</code>'s <code>neogeo.sv</code> and <code>sdram_mux.sv</code>; the Pocket side from <code>rtl/pocket/mem_map.svh</code>, <code>pocket_mem_mux.sv</code> and the fitter reports.</p>
+
+<h2>The two platforms</h2>
+<div class="wrap"><table>
+<tr><th></th><th>MiSTer (DE10-Nano)</th><th>Analogue Pocket</th></tr>
+<tr><td>FPGA</td><td>Cyclone V SE 5CSEBA6, 553 M10K blocks, with an ARM (HPS)</td><td>Cyclone V E 5CEBA4, 308 M10K blocks (budget 292); no ARM in the core</td></tr>
+<tr><td>Main external memory</td><td>SDRAM add-on, 32 to 128 MB, one or two modules (<code>MISTER_DUAL_SDRAM</code>)</td><td>SDRAM 64 MB</td></tr>
+<tr><td>Second memory</td><td>DDR3, 1 GB shared with the ARM, reached through <code>ddram</code> with a read cache</td><td>Two PSRAM dies, CRAM0 and CRAM1, 16 MB each, asynchronous</td></tr>
+<tr><td>Third memory</td><td>none</td><td>SRAM 256 KB (128K x 16, 55 ns), asynchronous</td></tr>
+<tr><td>How ROMs arrive</td><td>The ARM writes files through <code>ioctl</code></td><td>The Pocket's host writes data slots through the APF bridge</td></tr>
+<tr><td>CD sectors</td><td>The ARM streams each sector on request (<code>megacdd</code>)</td><td><code>cd_host</code> reads the BIN into a 4-sector bank; <code>cdd_drive</code> is <code>megacdd</code> in RTL</td></tr>
+</table></div>
+
+<h2>Cart core</h2>
+<div class="vs">
+<div class="side"><h3>MiSTer</h3>
+<div class="chip"><div>SDRAM <span>32 to 128 MB</span></div>
+<div class="reg rom"><span>System ROM (BIOS)</span><span>0x0000000</span></div>
+<div class="reg rom"><span>S ROM, SFIX (fix)</span><span>low area</span></div>
+<div class="reg rom"><span>P1 ROM</span><span>0x0200000</span></div>
+<div class="reg rom"><span>P2 ROM, banked</span><span>0x0300000+</span></div>
+<div class="reg rom"><span>C ROM (sprites)</span><span>up to 128 MB</span></div></div>
+<div class="chip"><div>DDR3 <span>via ddram</span></div>
+<div class="reg rom"><span>V ROMs (ADPCM-A, -B)</span><span>32 MB+</span></div>
+<div class="reg rom"><span>M1 ROM (Z80)</span><span></span></div></div>
+<div class="chip"><div>BRAM <span>M10K</span></div>
+<div class="reg ram"><span>68K work RAM</span><span>64 KB</span></div>
+<div class="reg ram"><span>MVS backup RAM</span><span>64 KB</span></div>
+<div class="reg ram"><span>Z80 RAM</span><span>2 KB</span></div>
+<div class="reg ram"><span>VRAM, palette, memory card</span><span></span></div>
+<div class="reg rom"><span>LO ROM</span><span>64 KB</span></div></div>
+</div>
+<div class="side"><h3>Analogue Pocket</h3>
+<div class="chip"><div>CRAM0 <span>PSRAM 16 MB</span></div>
+<div class="reg rom"><span>P1 ROM</span><span>0x000000 · 1 MB</span></div>
+<div class="reg rom"><span>P2 ROM, banked</span><span>0x100000 · ≤7 MB</span></div>
+<div class="reg rom"><span>PROG1</span><span>0x800000 · 1 MB</span></div>
+<div class="reg rom"><span>BIOS</span><span>0xA00000 · 128 KB</span></div>
+<div class="reg rom"><span>S ROM</span><span>0xC00000 · 512 KB</span></div>
+<div class="reg rom"><span>SFIX</span><span>0xD00000 · 128 KB</span></div>
+<div class="reg ram"><span>MVS backup RAM, saved to the SD</span><span>0xD20000 · 64 KB</span></div>
+<div class="reg rom"><span>M1 ROM (Z80)</span><span>0xF80000 · 512 KB</span></div></div>
+<div class="chip"><div>CRAM1 <span>PSRAM 16 MB</span></div>
+<div class="reg rom"><span>V ROMs (ADPCM)</span><span>0x000000 · 16 MB</span></div></div>
+<div class="chip"><div>SDRAM <span>64 MB</span></div>
+<div class="reg rom"><span>C ROM (sprites), interleaved</span><span>0 · 64 MB</span></div></div>
+<div class="chip"><div>SRAM <span>256 KB</span></div>
+<div class="reg rom"><span>Copy of the S ROM, if 128 KB or less</span><span>words 0x0000-0xFFFF</span></div>
+<div class="reg rom"><span>Copy of the first 128 KB of the M1 ROM, 256 KB with a larger S</span><span>rest of the chip</span></div></div>
+<div class="chip"><div>BRAM <span>M10K, 280 of 292 in the release</span></div>
+<div class="reg ram"><span>68K work RAM</span><span>64 KB</span></div>
+<div class="reg ram"><span>Z80 RAM, VRAM, palette, memory card</span><span></span></div>
+<div class="reg ram"><span>M1 read cache (2K words) and fix read cache (1K words)</span><span>6 KB</span></div>
+<div class="reg rom"><span>LO ROM</span><span>64 KB</span></div></div>
+</div>
+</div>
+<div class="legend"><span><i style="background:var(--rom)"></i>ROM, loaded at start</span><span><i style="background:var(--ram)"></i>RAM</span></div>
+
+<h2>CD core</h2>
+<div class="vs">
+<div class="side"><h3>MiSTer</h3>
+<div class="chip"><div>SDRAM <span>32 to 128 MB</span></div>
+<div class="reg rom"><span>BIOS</span><span>0x0000000 · 512 KB</span></div>
+<div class="reg ram"><span>FIX RAM</span><span>0x0080000 · 128 KB</span></div>
+<div class="reg ram"><span>PROG RAM (P1 zone and extended)</span><span>0x0200000 · 2 MB</span></div>
+<div class="reg ram"><span>SPR RAM, 4 banks</span><span>0x0800000 · 4 MB</span></div></div>
+<div class="chip"><div>DDR3 <span>via ddram</span></div>
+<div class="reg ram"><span>PCM RAM (ADPCM-A)</span><span>1 MB</span></div></div>
+<div class="chip"><div>BRAM <span>M10K</span></div>
+<div class="reg ram"><span>Z80 RAM (the work RAM pair)</span><span>64 KB</span></div>
+<div class="reg ram"><span>LC8951 cache</span><span>2 sectors</span></div>
+<div class="reg ram"><span>VRAM, palette, memory card, CDDA</span><span></span></div>
+<div class="reg rom"><span>LO ROM</span><span>64 KB</span></div></div>
+</div>
+<div class="side"><h3>Analogue Pocket</h3>
+<div class="chip"><div>CRAM0 <span>PSRAM 16 MB</span></div>
+<div class="reg ram"><span>PROG RAM</span><span>0x000000 · 2 MB</span></div>
+<div class="reg rom"><span>BIOS</span><span>0xA00000 · 512 KB</span></div></div>
+<div class="chip"><div>CRAM1 <span>PSRAM 16 MB</span></div>
+<div class="reg ram"><span>PCM RAM</span><span>0x000000 · 1 MB</span></div></div>
+<div class="chip"><div>SDRAM <span>64 MB</span></div>
+<div class="reg ram"><span>SPR RAM, 4 banks</span><span>0 · 4 MB</span></div></div>
+<div class="chip"><div>SRAM <span>256 KB</span></div>
+<div class="reg ram"><span>FIX RAM</span><span>word 0 · 128 KB</span></div></div>
+<div class="chip"><div>BRAM <span>281 M10K in the release</span></div>
+<div class="reg ram"><span>VRAM</span><span>64 blocks</span></div>
+<div class="reg ram"><span>Z80 RAM</span><span>64 blocks</span></div>
+<div class="reg rom"><span>LO table</span><span>64 blocks</span></div>
+<div class="reg ram"><span>Palette</span><span>16 blocks</span></div>
+<div class="reg ram"><span>cd_host sector bank, 4 sectors</span><span>16 blocks</span></div>
+<div class="reg ram"><span>Memory card</span><span>8 blocks</span></div>
+<div class="reg ram"><span>CDDA buffer</span><span>7 blocks</span></div>
+<div class="reg ram"><span>LC8951 cache, 2 sectors</span><span>4 blocks</span></div></div>
+</div>
+</div>
+<div class="legend"><span><i style="background:var(--rom)"></i>ROM, loaded at start</span><span><i style="background:var(--ram)"></i>RAM, filled by the BIOS and the game</span></div>
+
+<h2>Who shares a chip with the 68K</h2>
+<p>The two cores put the 68K's code on CRAM0 either way. What differs is who else reads that chip, and that decides how often the 68K waits. The figures are from the 68K wait counter on hardware, one play each: Metal Slug X, first mission, on the cart core, and Metal Slug on the CD core.</p>
+<div class="wrap"><table>
+<tr><th></th><th>Cart core</th><th>CD core</th></tr>
+<tr><td>68K code</td><td>P ROM and BIOS on CRAM0</td><td>PROG RAM and BIOS on CRAM0</td></tr>
+<tr><td>68K work RAM</td><td>M10K, never waits</td><td>PROG RAM on CRAM0, the 68K's own traffic</td></tr>
+<tr><td>Fix layer, one 16-bit read every 8 pixels</td><td>SRAM copy of the S ROM if it is 128 KB or less; otherwise <b>CRAM0</b> through a 2 KB read cache, shared with the 68K</td><td>SRAM, its own arbiter</td></tr>
+<tr><td>Z80 program</td><td>The first 128 KB of the M1 ROM (256 KB with a larger S) from an SRAM copy; the rest from <b>CRAM0</b> through a 4 KB read cache</td><td>64 KB of RAM in M10K, loaded from the disc: the Z80 never touches CRAM0</td></tr>
+<tr><td>Readers of CRAM0 besides the 68K</td><td>Fix and Z80 only for what the SRAM does not hold, plus SFIX and the MVS backup RAM, in the window after each PCK2</td><td>None while a game runs; the CD's writes queue behind the 68K</td></tr>
+<tr><td>68K clocks lost to waits</td><td>0.000% on Metal Slug X, first mission. The layout before this one lost 1.354%, worst frame 2.295%</td><td>0.000%</td></tr>
+</table></div>
+<p>The Z80 is the part the cart core cannot copy from the CD core: a Neo Geo CD's sound program is 64 KB of RAM, which fits in M10K, while a cartridge's is a ROM of up to 512 KB. The cart core keeps the first part of it, and of the fix, in the SRAM, and caches what stays on CRAM0, so the 68K finds that chip free. After a load a copy engine fills the SRAM, about 46 ms, with the core held in reset.</p>
+
+<h2>Sizes at a glance</h2>
+<div class="wrap"><table>
+<tr><th>Memory</th><th>Cart core on the Pocket</th><th>CD core on the Pocket</th><th>MiSTer, either core</th></tr>
+<tr><td>Sprites (C ROM or SPR RAM)</td><td>up to 64 MB, SDRAM</td><td>4 MB, SDRAM</td><td>up to 128 MB with two SDRAM modules</td></tr>
+<tr><td>68K program (P ROM or PROG RAM)</td><td>up to 8 MB plus 1 MB PROG1, CRAM0</td><td>2 MB, CRAM0</td><td>SDRAM</td></tr>
+<tr><td>Samples (V ROM or PCM RAM)</td><td>up to 16 MB, CRAM1</td><td>1 MB, CRAM1</td><td>DDR3, more room than the cart's 16 MB</td></tr>
+<tr><td>Fix (S ROM, SFIX or FIX RAM)</td><td>512 KB plus 128 KB; an S ROM of 128 KB or less is copied to SRAM, else CRAM0 with a cache</td><td>128 KB, SRAM</td><td>SDRAM</td></tr>
+<tr><td>Z80 program (M1 ROM or Z80 RAM)</td><td>up to 512 KB, CRAM0; the first 128 or 256 KB copied to SRAM</td><td>64 KB, M10K</td><td>DDR3 for the cart; the work RAM block RAMs for the CD</td></tr>
+<tr><td>68K work RAM</td><td>64 KB, M10K</td><td>part of PROG RAM, CRAM0</td><td>64 KB, M10K</td></tr>
+<tr><td>Backup RAM (MVS)</td><td>64 KB, CRAM0, saved to the SD</td><td>not built</td><td>64 KB, M10K</td></tr>
+<tr><td>M10K blocks used</td><td>280 of 292</td><td>281 of 292</td><td>of 553</td></tr>
+</table></div>
+
+<h2>How we designed the Pocket layout</h2>
+<h3>Start from MiSTer, change the chips, not the logic</h3>
+<p>The video, sound and CD logic are MiSTer's. <code>pocket_mem_mux.sv</code> is a port of <code>sdram_mux.sv</code> and the client side of <code>ddram.sv</code> onto four chips. The CD transfer remaps are the ones of <code>sdram_mux.sv</code> with the target chip changed, so the cores keep MiSTer's behaviour and its bugs stay comparable.</p>
+<h3>Put each stream on the chip that suits it</h3>
+<ul>
+<li><b>Sprites to SDRAM.</b> The sprite fetch is the heaviest stream: 64 bits each PCK1. The SDRAM's bursts serve it; it holds the 64 MB C ROM, or the CD's 4 MB SPR RAM.</li>
+<li><b>68K code and data to CRAM0.</b> P ROM, BIOS, fix and M1 are short random reads, which an asynchronous PSRAM answers with a fixed latency. The 68K's wait counter measures what it costs.</li>
+<li><b>Sound to CRAM1.</b> ADPCM-A and -B read the V ROMs, or the CD's PCM RAM, on their own chip, with no 68K or sprite traffic to wait behind. On MiSTer these go to DDR3.</li>
+<li><b>Fix and Z80 program to SRAM, as far as it holds.</b> The fix layer is read every PCK2 and must not wait. In the CD core the SRAM is FIX RAM with its own arbiter; in the cart core it holds copies of the S ROM and the first part of the M1 ROM, made after each load, and what stays on CRAM0 goes through two small read caches.</li>
+</ul>
+<h3>One registered master per chip</h3>
+<p>Each chip has a fixed priority. CRAM0, cart: loader, save path, posted backup write, 68K, fix, Z80, S and M1 copy; CD: loader, 68K, CD write queue. CRAM1: loader &gt; CD write &gt; ADPCM-A &gt; ADPCM-B. SDRAM: sprite &gt; CD read &gt; loader &gt; CD write, with refresh spaced by a watchdog. SRAM, cart: fix, copy write, Z80; CD: fix &gt; CD read &gt; CD write. Requests stay pending until served. CD writes are posted to a queue, and PCM and FIX writes hold the 68K's DTACK until they reach the chip.</p>
+<h3>Owner's decisions for the CD core</h3>
+<ul>
+<li>Z80 RAM in M10K, as MiSTer: 64 blocks.</li>
+<li>PROG RAM in CRAM0, its cost checked with the 68K wait counter.</li>
+</ul>
+<h3>What the Pocket cannot hold, and what it gains</h3>
+<ul>
+<li>C ROM up to 64 MB (MiSTer up to 128 MB with two SDRAM modules); V ROMs up to 16 MB (MiSTer's DDR3 has room for more); P ROM up to 8 MB plus a 1 MB PROG1.</li>
+<li>No ARM: CD sectors come from the host over the APF bridge, a random read costing up to about 90 ms. <code>cd_fetch</code> keeps a 4-sector bank, prefetches the next three, and reads a seek's target while the drive seeks.</li>
+<li>M10K is the tight resource: 281 of 292 in the CD release. The LC8951's real buffer (a ring of 16 KB or more, instead of the 2-sector cache) needs about 16 more blocks; moving the memory card to external memory is the planned way to find them.</li>
+</ul>
+
+<footer>NeoMillie and NeoMillieCD. Generated from the repository's RTL and fit reports; MiSTer details from the vendored NeoGeo_MiSTer source.</footer>
+</main>
+</body>
+</html>
