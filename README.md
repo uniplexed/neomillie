@@ -98,8 +98,8 @@ All with `uni-bioscd.rom`, on a Pocket. "Build" is the version the row was run o
 | Pulstar | CD/CDZ on, 2x | Works | 0.5.1 |
 | Fatal Fury 3 | CD/CDZ on, 2x | Works almost perfectly, with a few black frames | 0.5.1 |
 
-Metal Slug and Metal Slug 2 feel slower on CD than on the cartridge core, and the music and sound differ slightly. Every run is in
-[`docs/hw-tests.md`](docs/hw-tests.md), a chronological log of the project's hardware tests.
+Metal Slug and Metal Slug 2 feel slower on CD than on the cartridge core, and the music and sound differ slightly. The results of the
+hardware tests are in [`docs/hw-tests.md`](docs/hw-tests.md).
 
 ### BIOS
 
