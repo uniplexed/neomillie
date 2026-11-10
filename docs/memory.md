@@ -6,6 +6,8 @@ Everything here comes from the RTL in this repository: `rtl/pocket/mem_map.svh` 
 
 ![Memory layout of both cores](memory-layout.svg)
 
+![Neo Geo components and the Pocket memories they use in each mode](memory-components.svg)
+
 ## The chips
 
 | Name | Part | Size | Bus | Controller | Clock |

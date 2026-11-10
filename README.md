@@ -12,7 +12,11 @@ Pocket hardware layer.
 
 **New in NeoMillie 0.5.1: a new memory layout for the cartridge core.** The 68000 waits far less for the ROM memory: 0.000% of its
 clocks lost on Metal Slug X, against 1.354% before. Saves are written on Reset Core as well as on Quit. Millie's icon is no longer
-inverted on the Pocket's menu, and the Platform banner is new.
+inverted on the Pocket's menu.
+
+**New in NeoMillieCD 0.5.3: closer to the real console.** A new sector is no longer held back for up to 50 ms while the decoder's
+interrupt is masked, which real hardware does not do. The 68000's work RAM starts as 0xAA, as on MiSTer. The memory card is
+written on Reset Core as well as on Quit, and the Platform banner is new.
 
 **New in NeoMillieCD 0.5.2: memory card saves reach the SD card.** On 0.5.0 and 0.5.1 a game saved to the card and could
 load it until you left the core, but the file was not written on Quit, so the save was lost. Please update. Saves made on
@@ -88,8 +92,17 @@ CD/CDZ on, which this release does not offer at 1x.
 | Samurai Shodown RPG | CD/CDZ on, 2x | Loads on the first Start Game, up to the fight after choosing a character | 0.5.1 |
 | Samurai Shodown RPG | CD/CDZ off, 1x | Loads on the first Start Game, up to the fight after choosing a character | 0.5.1 |
 | Last Blade 2 | CD/CDZ off, 1x | Works | 0.5.0 |
+| The King of Fighters '98 | CD/CDZ on, 2x | Plays, sounds fine | 0.5.1 |
+| Art of Fighting | CD/CDZ on, 2x | Plays, sounds fine | 0.5.1 |
+| Samurai Shodown IV | CD/CDZ on, 2x | Plays, sounds fine | 0.5.1 |
+| Twinkle Star Sprites | CD/CDZ on, 2x | Plays, sounds fine | 0.5.1 |
+| Metal Slug 2 | CD/CDZ on, 2x | Plays, sounds fine. Slower under heavy load than on the cartridge core | 0.5.1 |
+| Aero Fighters 3 | CD/CDZ on, 2x | Plays, sounds fine | 0.5.1 |
+| Pulstar | CD/CDZ on, 2x | Works | 0.5.1 |
+| Fatal Fury 3 | CD/CDZ on, 2x | Works almost perfectly, with a few black frames | 0.5.1 |
 
-Converted but not yet tried: Crossed Swords II, Fatal Fury 3, Pulstar. Every run is in
+Metal Slug and Metal Slug 2 feel slower on CD than on the cartridge core, and the music and sound differ slightly. It may be
+how the CD version runs rather than a fault. Converted but not yet tried: Crossed Swords II. Every run is in
 [`docs/hw-tests.md`](docs/hw-tests.md), a chronological log of the project's hardware tests.
 
 ### BIOS
@@ -103,11 +116,6 @@ Converted but not yet tried: Crossed Swords II, Fatal Fury 3, Pulstar. Every run
 
 ### Known issues
 
-- **The fix for 2x is a tolerance:** the BIOS's directory scan can keep the decoder interrupt masked for longer than a
-  sector takes at 2x (8 to 9 ms against 6.67 ms). So this core holds a new sector while that interrupt is masked, for
-  at most 50 ms, which real hardware does not do. Simulation found no BIOS or game that depends on the opposite, but
-  only two games' programs were searched, and not exhaustively. A held sector can also delay a CD audio track's start
-  by up to that long.
 - **Brief music cuts** were heard on a debug build, which also writes a counter file to the SD card every 7 seconds.
   None were reported on the short runs of the release builds, which does not prove them gone.
 - **Slow SD reads:** a read can take around 450 ms. This slows loading, and in simulation it leaves a silent gap in CD
@@ -140,7 +148,7 @@ not keep, and was not run on a Pocket in that form. CHDs made by other tools hav
 | LO | yes | `000-lo.lo` |
 | Disc | no | Picked by you: a `.cue`, or a raw `.bin` |
 | Disc data | no | Not yours to pick: the core opens the CUE's BIN here |
-| Memory Card | no | Up to 8 KB, `Saves/ngcd/common/uni-bioscd.sav`, written when you Quit the core. One card, whichever BIOS is picked |
+| Memory Card | no | Up to 8 KB, `Saves/ngcd/common/uni-bioscd.sav`, written on Quit and on Reset Core. One card, whichever BIOS is picked |
 
 Menu: Reset Core, CD/CDZ, Region (US, EU, JP, AS), 304 or 320 wide, and four aspect ratios for the scaler.
 
@@ -162,9 +170,10 @@ VROM. BIOS, LO and SFIX are the fixed files above. Saves: `Memory Card` and `Bac
 
 Menu: Reset Core, AES/MVS (on is MVS), PAL output, 304 or 320 wide, and four aspect ratios for the scaler.
 
-Tested on one Pocket and working: Metal Slug 3 (memory card save and read-back after a power cycle), KOF '98, Garou,
-Samurai Shodown V Special, The Super Spy, Art of Fighting 1 (jukebox with stereo), changing AES/MVS both ways with a
-game running, and Reset Core. On Metal Slug X, first mission, one play, the 68000 lost 0.000% of its clocks waiting for
+Tested on one Pocket and working: Metal Slug (all of level 1), Metal Slug 3 (memory card save and read-back after a power
+cycle, in MVS and AES modes), Metal Slug X (first mission), KOF '98, KOF 2003, Garou, SVC Chaos, Samurai Shodown V (one
+fight), Samurai Shodown V Special (two fights), The Super Spy, Art of Fighting 1 (jukebox with stereo), changing AES/MVS
+both ways with a game running, PAL on and off, the P2 coin and Reset Core. On Metal Slug X, first mission, one play, the 68000 lost 0.000% of its clocks waiting for
 the ROM memory with this memory layout, against 1.354% before it. Those ran on earlier builds. On 0.5.0, a game picked from the core's list played and
 its memory card save was there after powering off.
 
@@ -185,6 +194,17 @@ Limits:
 [docs/memory.md](docs/memory.md) has the addresses, the arbitration of each chip, the timing budgets including `RD_WAIT`, the saves and how to
 measure and change them.
 
+![Neo Geo components and the Pocket memories they use in AES, MVS and CD modes](docs/memory-components.svg)
+
+The same layout seen from the other side: for each Neo Geo component, the memory that holds it in each mode.
+
+## Artwork
+
+The Platform banner of NeoMillieCD, with Millie, the logo. NeoMillie ships no banner: the `ng` Platform is shared by every Neo Geo
+core, and its image is the library's.
+
+<p><img src="docs/banners/neomilliecd-banner.png" alt="NeoMillieCD banner: Millie with a CD" width="420"></p>
+
 ## Building from source
 
     git clone --recurse-submodules https://github.com/uniplexed/neomillie
@@ -201,8 +221,8 @@ Quartus build (Quartus Prime Lite 25.1) with the ALM and M10K budget check, then
 `neogeocd_debug` builds the CD core's debug version: it keeps CD Speed and Lid open in the menu, and writes counters to
 `wait.sav`, which `tools/check_wait_save.py` reads.
 
-Fit on the 5CEBA4F23C8, of 18,480 ALMs and 308 M10K: NeoMillie 0.5.1 takes 8,994 ALMs and 280 M10K, with no negative
-slack.
+Fit on the 5CEBA4F23C8, of 18,480 ALMs and 308 M10K: NeoMillie 0.5.1 takes 8,994 ALMs and 280 M10K and NeoMillieCD 0.5.3
+11,527 ALMs and 281 M10K, with no negative slack in either.
 
 ## License
 

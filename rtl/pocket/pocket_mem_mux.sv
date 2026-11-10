@@ -325,6 +325,12 @@ wire [25:1] dl_head_word = dl_head[40:16];
 wire [15:0] dl_head_data = dl_head[15:0];
 
 wire dl_c0 = dl_valid && dl_head_chip == CHIP_C0;
+
+// The CD's 68K work RAM starts as 0xAA, not 0, as Main_MiSTer fills it (Double Dragon reads it before writing). A sweep of
+// 128 KB once per load of the core. It starts with the loader's first word, so CRAM0 is up, and ends long before the 68K runs.
+reg  [16:0] wfill = 0;
+reg         wfill_on = 0;
+wire        want_wfill = CD_BUILD & wfill_on & ~wfill[16];
 wire dl_c1 = dl_valid && dl_head_chip == CHIP_C1;
 wire dl_sd = dl_valid && dl_head_chip == CHIP_SD;
 
@@ -643,6 +649,7 @@ always @(posedge CLK) begin
 
     if (DL_EN && DL_WR && dl_full) dl_overflow <= 1;
     if (MEM_INIT) dl_overflow <= 0;
+    if (dl_valid) wfill_on <= 1;
 
     if (DL_EN && DL_WR && dl_hit && !dl_full) begin
         dl_fifo[dl_wp[DL_AW-1:0]] <= {dl_chip, dl_word, DL_DATA};
@@ -711,6 +718,14 @@ always @(posedge CLK) begin
             c0_addr  <= dl_head_word[23:1];
             c0_wdata <= dl_head_data;
             dl_rp    <= dl_rp + 1'd1;
+        end
+        else if (want_wfill) begin
+            c0_req   <= 1;
+            c0_we    <= 1;
+            c0_owner <= C0_LOADER;
+            c0_addr  <= {7'b0001_000, wfill[15:0]};
+            c0_wdata <= 16'hAAAA;
+            wfill    <= wfill + 1'd1;
         end
         else if (want_sv) begin
             c0_req   <= 1;

@@ -358,6 +358,12 @@ module tb_pocket_mem_mux;
         dl(8'd4, 27'h1000, 16'h5A5A);           // DL_EN low
         tick(60);
         DL_EN = 1;
+        // The CD build's work RAM fill, begun by the first word: 64K words, one of them the index 6 route above
+        while (!dut.wfill[16]) tick;
+        tick(40);
+        check(c0_read('h100000) == 16'hAAAA && c0_read('h101238) == 16'hAAAA && c0_read('h11FFFE) == 16'hAAAA, "work RAM not filled");
+        check(c0_read('h0FFFFE) == 16'hDEAD && c0_read('h120000) == 16'hDEAD, "the fill ran past the work RAM");
+        n_c0 += 65536 - 1;
         check(mem_c0.mem.size() == n_c0, $sformatf("CRAM0 holds %0d words, expected %0d", mem_c0.mem.size(), n_c0));
         check(mem_c1.mem.size() == n_c1, $sformatf("CRAM1 holds %0d words, expected %0d", mem_c1.mem.size(), n_c1));
         check(mem_sd.mem.size() == n_sd, $sformatf("SDRAM holds %0d words, expected %0d", mem_sd.mem.size(), n_sd));

@@ -189,11 +189,7 @@ module cd_sys(
 	reg SECTOR_READY; // For decoder interrupt
 	reg SECTOR_FILLED[2];
 	reg [23:0] SECTOR_TIME_CNT;
-	// POCKET: the longest a sector waits for the decoder interrupt's unmask. A program may keep it masked and poll IFSTAT.
-	localparam [23:0] MASK_HOLD_MAX = MCLK / 20;	// 50 ms
-	reg [23:0] MASK_HOLD_CNT;
-	reg DBG_HOLD_TOG = 0;	// POCKET
-	assign DBG_HOLD = {DBG_HOLD_TOG, MASK_HOLD_CNT != 0, LC8951_DECEN & ~(REG_FF0002[10] & REG_FF0002[8])};
+	assign DBG_HOLD = {2'b00, LC8951_DECEN & ~(REG_FF0002[10] & REG_FF0002[8])};	// POCKET
 
 	reg FORCE_WR;
 	reg [2:0] LOADING_STATE;
@@ -295,7 +291,6 @@ module cd_sys(
 			SECTOR_FILLED[0] <= 0;
 			SECTOR_FILLED[1] <= 0;
 			SECTOR_TIME_CNT <= 0;
-			MASK_HOLD_CNT <= 0;
 			SECTOR_TIME <= SECTOR_TIME_1X[20:0];
 
 			LOADING_STATE <= 3'd0;	// Idle, waiting for request
@@ -331,26 +326,14 @@ module cd_sys(
 				// next flip is still at least SECTOR_TIME after this one, and the supply waits on CD_DATA_WR_READY
 				// as before. A flip between the STAT3 read and the DMA's start is not held: a program that takes a
 				// sector and never DMAs it must not stall the stream.
-				// POCKET: nor while the decoder is on and its interrupt masked (FF0002 bits 10 and 8). /INT falls once, about
-				// 1.79 ms long, so a sector offered in that window never reaches the handler. The BIOS's directory scan masks for
-				// 9.23 ms on KOF '97, longer than a sector at 2x. Held, the drive waits on CD_DATA_WR_READY and the sector flips
-				// in at the unmask, or after MASK_HOLD_MAX for a program that polls. Real hardware does not wait: this is a tolerance, on
-				// trial on hardware.
 				if (SECTOR_FILLED[~CACHE_RD_BANK] & ~DMA_RUNNING) begin
-					if (LC8951_DECEN & ~(REG_FF0002[10] & REG_FF0002[8]) & (MASK_HOLD_CNT < MASK_HOLD_MAX)) begin
-						MASK_HOLD_CNT <= MASK_HOLD_CNT + 1'b1;
-					end else begin
-						// Here with the decoder on and its interrupt masked, the count is at MASK_HOLD_MAX: the hold ran out
-						if (LC8951_DECEN & ~(REG_FF0002[10] & REG_FF0002[8])) DBG_HOLD_TOG <= ~DBG_HOLD_TOG;
-						MASK_HOLD_CNT <= 0;
-						DBG_FLIP <= 1;					// POCKET
-						DBG_OUT_HEAD <= HEADER_DIN;		// POCKET: the header of the sector leaving
-						SECTOR_FILLED[CACHE_RD_BANK] <= 0;
-						SECTOR_READY <= 1;
-						CACHE_RD_BANK <= ~CACHE_RD_BANK;
-						SECTOR_TIME_CNT <= 0;
-						SECTOR_TIME <= SECTOR_TIME_SEL;
-					end
+					DBG_FLIP <= 1;					// POCKET
+					DBG_OUT_HEAD <= HEADER_DIN;		// POCKET: the header of the sector leaving
+					SECTOR_FILLED[CACHE_RD_BANK] <= 0;
+					SECTOR_READY <= 1;
+					CACHE_RD_BANK <= ~CACHE_RD_BANK;
+					SECTOR_TIME_CNT <= 0;
+					SECTOR_TIME <= SECTOR_TIME_SEL;
 				end
 			end
 

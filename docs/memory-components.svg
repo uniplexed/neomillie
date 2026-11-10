@@ -1,0 +1,254 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1336 1288" width="1336" role="img">
+<title>Neo Geo components and the Analogue Pocket memories they use in AES, MVS and CD modes</title>
+<desc>For each component of the emulated Neo Geo, the Pocket memory that holds its data in each mode. Details in docs/memory.md.</desc>
+<style>
+svg{font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+.bg{fill:#fbfaf7}.g{fill:#efede6}.r{stroke:#e4e2da;stroke-width:1}
+.ti{font-size:24px;font-weight:600;fill:#24231f}
+.h{font-size:19px;font-weight:600;fill:#24231f}.b{font-size:15px;font-weight:600;fill:#24231f}
+.t{font-size:14px;fill:#24231f}.m{font-size:13px;fill:#6b6962}.n{font-size:13px;fill:#a3a19a}
+.c{font-size:13px;font-weight:600;font-family:ui-monospace,Consolas,monospace}.d{font-size:13px}
+.CRAM0{fill:#eeedfe;stroke:#afa9ec;stroke-width:.5}.CRAM0t{fill:#3c3489}
+.CRAM1{fill:#e6f1fb;stroke:#85b7eb;stroke-width:.5}.CRAM1t{fill:#0c447c}
+.SDRAM{fill:#e1f5ee;stroke:#5dcaa5;stroke-width:.5}.SDRAMt{fill:#085041}
+.SRAM{fill:#faeeda;stroke:#ef9f27;stroke-width:.5}.SRAMt{fill:#633806}
+.M10K{fill:#faece7;stroke:#f0997b;stroke-width:.5}.M10Kt{fill:#712b13}
+@media (prefers-color-scheme:dark){
+.bg{fill:#1c1b19}.g{fill:#2c2b27}.r{stroke:#3a3934}.ti,.h,.b,.t{fill:#ecebe6}.m{fill:#a3a19a}.n{fill:#6b6962}
+.CRAM0{fill:#3c3489;stroke:#7f77dd}.CRAM0t{fill:#eeedfe}
+.CRAM1{fill:#0c447c;stroke:#378add}.CRAM1t{fill:#e6f1fb}
+.SDRAM{fill:#085041;stroke:#1d9e75}.SDRAMt{fill:#e1f5ee}
+.SRAM{fill:#633806;stroke:#ba7517}.SRAMt{fill:#faeeda}
+.M10K{fill:#712b13;stroke:#d85a30}.M10Kt{fill:#faece7}
+}
+</style>
+<rect class="bg" width="1336" height="1288"/>
+<text class="ti" x="24" y="44">Neo Geo components on the Analogue Pocket's memories</text>
+<rect class="CRAM0" x="24" y="72" width="238" height="30" rx="4"/>
+<text class="c CRAM0t" x="36" y="92">CRAM0</text>
+<text class="d CRAM0t" x="100" y="92">PSRAM, 16 MB</text>
+<rect class="CRAM1" x="274" y="72" width="238" height="30" rx="4"/>
+<text class="c CRAM1t" x="286" y="92">CRAM1</text>
+<text class="d CRAM1t" x="350" y="92">PSRAM, 16 MB</text>
+<rect class="SDRAM" x="524" y="72" width="238" height="30" rx="4"/>
+<text class="c SDRAMt" x="536" y="92">SDRAM</text>
+<text class="d SDRAMt" x="600" y="92">64 MB</text>
+<rect class="SRAM" x="774" y="72" width="238" height="30" rx="4"/>
+<text class="c SRAMt" x="786" y="92">SRAM</text>
+<text class="d SRAMt" x="850" y="92">256 KB</text>
+<rect class="M10K" x="1024" y="72" width="238" height="30" rx="4"/>
+<text class="c M10Kt" x="1036" y="92">M10K</text>
+<text class="d M10Kt" x="1100" y="92">FPGA block RAM</text>
+<text class="h" x="268" y="130">AES</text>
+<text class="m" x="324" y="130">Home console</text>
+<text class="h" x="620" y="130">MVS</text>
+<text class="m" x="676" y="130">Arcade</text>
+<text class="h" x="972" y="130">CD</text>
+<text class="m" x="1028" y="130">NeoMillieCD core</text>
+<rect class="g" x="24" y="144" width="1288" height="28" rx="4"/>
+<text class="b" x="36" y="163">68000, main CPU</text>
+<text class="t" x="36" y="202.0">Program</text>
+<rect class="CRAM0" x="268" y="183" width="340" height="28" rx="4"/>
+<text class="c CRAM0t" x="280" y="202">CRAM0</text>
+<text class="d CRAM0t" x="344" y="202">P1, P2 and PROG1 ROMs</text>
+<rect class="CRAM0" x="620" y="183" width="340" height="28" rx="4"/>
+<text class="c CRAM0t" x="632" y="202">CRAM0</text>
+<text class="d CRAM0t" x="696" y="202">P1, P2 and PROG1 ROMs</text>
+<rect class="CRAM0" x="972" y="183" width="340" height="28" rx="4"/>
+<text class="c CRAM0t" x="984" y="202">CRAM0</text>
+<text class="d CRAM0t" x="1048" y="202">PROG RAM, 2 MB, loaded from disc</text>
+<line class="r" x1="24" x2="1312" y1="218" y2="218"/>
+<text class="t" x="36" y="244.0">BIOS</text>
+<rect class="CRAM0" x="268" y="225" width="340" height="28" rx="4"/>
+<text class="c CRAM0t" x="280" y="244">CRAM0</text>
+<text class="d CRAM0t" x="344" y="244">System ROM, 128 KB</text>
+<rect class="CRAM0" x="620" y="225" width="340" height="28" rx="4"/>
+<text class="c CRAM0t" x="632" y="244">CRAM0</text>
+<text class="d CRAM0t" x="696" y="244">System ROM, 128 KB</text>
+<rect class="CRAM0" x="972" y="225" width="340" height="28" rx="4"/>
+<text class="c CRAM0t" x="984" y="244">CRAM0</text>
+<text class="d CRAM0t" x="1048" y="244">System ROM, 512 KB</text>
+<line class="r" x1="24" x2="1312" y1="260" y2="260"/>
+<text class="t" x="36" y="286.0">Work RAM</text>
+<rect class="M10K" x="268" y="267" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="280" y="286">M10K</text>
+<text class="d M10Kt" x="344" y="286">64 KB</text>
+<rect class="M10K" x="620" y="267" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="632" y="286">M10K</text>
+<text class="d M10Kt" x="696" y="286">64 KB</text>
+<rect class="CRAM0" x="972" y="267" width="340" height="28" rx="4"/>
+<text class="c CRAM0t" x="984" y="286">CRAM0</text>
+<text class="d CRAM0t" x="1048" y="286">Inside PROG RAM</text>
+<line class="r" x1="24" x2="1312" y1="302" y2="302"/>
+<text class="t" x="36" y="328.0">Backup RAM</text>
+<text class="n" x="282" y="328.0">Not used</text>
+<rect class="CRAM0" x="620" y="309" width="340" height="28" rx="4"/>
+<text class="c CRAM0t" x="632" y="328">CRAM0</text>
+<text class="d CRAM0t" x="696" y="328">64 KB, saved to the SD</text>
+<text class="n" x="986" y="328.0">Not used</text>
+<line class="r" x1="24" x2="1312" y1="344" y2="344"/>
+<text class="t" x="36" y="370.0">Memory card</text>
+<rect class="M10K" x="268" y="351" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="280" y="370">M10K</text>
+<text class="d M10Kt" x="344" y="370">8 KB, saved to the SD</text>
+<rect class="M10K" x="620" y="351" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="632" y="370">M10K</text>
+<text class="d M10Kt" x="696" y="370">8 KB, saved to the SD</text>
+<rect class="M10K" x="972" y="351" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="984" y="370">M10K</text>
+<text class="d M10Kt" x="1048" y="370">8 KB, saved to the SD</text>
+<line class="r" x1="24" x2="1312" y1="386" y2="386"/>
+<text class="t" x="36" y="412.0">Cartridge chips</text>
+<rect class="M10K" x="268" y="393" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="280" y="412">M10K</text>
+<text class="d M10Kt" x="344" y="412">XRAM 8 KB, PVC 8 KB</text>
+<rect class="M10K" x="620" y="393" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="632" y="412">M10K</text>
+<text class="d M10Kt" x="696" y="412">XRAM 8 KB, PVC 8 KB</text>
+<text class="n" x="986" y="412.0">Not used</text>
+<line class="r" x1="24" x2="1312" y1="428" y2="428"/>
+<rect class="g" x="24" y="440" width="1288" height="28" rx="4"/>
+<text class="b" x="36" y="459">Z80, sound CPU</text>
+<text class="t" x="36" y="530.0">Program</text>
+<rect class="SRAM" x="268" y="479" width="340" height="28" rx="4"/>
+<text class="c SRAMt" x="280" y="498">SRAM</text>
+<text class="d SRAMt" x="344" y="498">M1 ROM, first 128 or 256 KB</text>
+<rect class="CRAM0" x="268" y="511" width="340" height="28" rx="4"/>
+<text class="c CRAM0t" x="280" y="530">CRAM0</text>
+<text class="d CRAM0t" x="344" y="530">Rest of the M1 ROM</text>
+<rect class="M10K" x="268" y="543" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="280" y="562">M10K</text>
+<text class="d M10Kt" x="344" y="562">M1 read cache, 4 KB</text>
+<rect class="SRAM" x="620" y="479" width="340" height="28" rx="4"/>
+<text class="c SRAMt" x="632" y="498">SRAM</text>
+<text class="d SRAMt" x="696" y="498">M1 ROM, first 128 or 256 KB</text>
+<rect class="CRAM0" x="620" y="511" width="340" height="28" rx="4"/>
+<text class="c CRAM0t" x="632" y="530">CRAM0</text>
+<text class="d CRAM0t" x="696" y="530">Rest of the M1 ROM</text>
+<rect class="M10K" x="620" y="543" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="632" y="562">M10K</text>
+<text class="d M10Kt" x="696" y="562">M1 read cache, 4 KB</text>
+<rect class="M10K" x="972" y="479" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="984" y="498">M10K</text>
+<text class="d M10Kt" x="1048" y="498">Z80 RAM, 64 KB, loaded from disc</text>
+<line class="r" x1="24" x2="1312" y1="578" y2="578"/>
+<text class="t" x="36" y="604.0">Work RAM</text>
+<rect class="M10K" x="268" y="585" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="280" y="604">M10K</text>
+<text class="d M10Kt" x="344" y="604">2 KB</text>
+<rect class="M10K" x="620" y="585" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="632" y="604">M10K</text>
+<text class="d M10Kt" x="696" y="604">2 KB</text>
+<rect class="M10K" x="972" y="585" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="984" y="604">M10K</text>
+<text class="d M10Kt" x="1048" y="604">Same 64 KB</text>
+<line class="r" x1="24" x2="1312" y1="620" y2="620"/>
+<rect class="g" x="24" y="632" width="1288" height="28" rx="4"/>
+<text class="b" x="36" y="651">LSPC and fix layer, video</text>
+<text class="t" x="36" y="690.0">Sprite graphics</text>
+<rect class="SDRAM" x="268" y="671" width="340" height="28" rx="4"/>
+<text class="c SDRAMt" x="280" y="690">SDRAM</text>
+<text class="d SDRAMt" x="344" y="690">C ROMs, up to 64 MB</text>
+<rect class="SDRAM" x="620" y="671" width="340" height="28" rx="4"/>
+<text class="c SDRAMt" x="632" y="690">SDRAM</text>
+<text class="d SDRAMt" x="696" y="690">C ROMs, up to 64 MB</text>
+<rect class="SDRAM" x="972" y="671" width="340" height="28" rx="4"/>
+<text class="c SDRAMt" x="984" y="690">SDRAM</text>
+<text class="d SDRAMt" x="1048" y="690">SPR RAM, 4 MB, four banks</text>
+<line class="r" x1="24" x2="1312" y1="706" y2="706"/>
+<text class="t" x="36" y="764.0">Fix layer</text>
+<rect class="SRAM" x="268" y="713" width="340" height="28" rx="4"/>
+<text class="c SRAMt" x="280" y="732">SRAM</text>
+<text class="d SRAMt" x="344" y="732">S ROM of 128 KB or less</text>
+<rect class="CRAM0" x="268" y="745" width="340" height="28" rx="4"/>
+<text class="c CRAM0t" x="280" y="764">CRAM0</text>
+<text class="d CRAM0t" x="344" y="764">Larger S ROM</text>
+<rect class="M10K" x="268" y="777" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="280" y="796">M10K</text>
+<text class="d M10Kt" x="344" y="796">Fix read cache, 2 KB</text>
+<rect class="SRAM" x="620" y="713" width="340" height="28" rx="4"/>
+<text class="c SRAMt" x="632" y="732">SRAM</text>
+<text class="d SRAMt" x="696" y="732">S ROM of 128 KB or less</text>
+<rect class="CRAM0" x="620" y="745" width="340" height="28" rx="4"/>
+<text class="c CRAM0t" x="632" y="764">CRAM0</text>
+<text class="d CRAM0t" x="696" y="764">Larger S ROM, and SFIX 128 KB</text>
+<rect class="M10K" x="620" y="777" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="632" y="796">M10K</text>
+<text class="d M10Kt" x="696" y="796">Fix read cache, 2 KB</text>
+<rect class="SRAM" x="972" y="713" width="340" height="28" rx="4"/>
+<text class="c SRAMt" x="984" y="732">SRAM</text>
+<text class="d SRAMt" x="1048" y="732">FIX RAM, 128 KB</text>
+<line class="r" x1="24" x2="1312" y1="812" y2="812"/>
+<text class="t" x="36" y="838.0">Video RAM</text>
+<rect class="M10K" x="268" y="819" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="280" y="838">M10K</text>
+<text class="d M10Kt" x="344" y="838">Slow 64 KB, fast 4 KB</text>
+<rect class="M10K" x="620" y="819" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="632" y="838">M10K</text>
+<text class="d M10Kt" x="696" y="838">Slow 64 KB, fast 4 KB</text>
+<rect class="M10K" x="972" y="819" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="984" y="838">M10K</text>
+<text class="d M10Kt" x="1048" y="838">Slow 64 KB, fast 4 KB</text>
+<line class="r" x1="24" x2="1312" y1="854" y2="854"/>
+<text class="t" x="36" y="880.0">Palette</text>
+<rect class="M10K" x="268" y="861" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="280" y="880">M10K</text>
+<text class="d M10Kt" x="344" y="880">16 KB</text>
+<rect class="M10K" x="620" y="861" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="632" y="880">M10K</text>
+<text class="d M10Kt" x="696" y="880">16 KB</text>
+<rect class="M10K" x="972" y="861" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="984" y="880">M10K</text>
+<text class="d M10Kt" x="1048" y="880">16 KB</text>
+<line class="r" x1="24" x2="1312" y1="896" y2="896"/>
+<text class="t" x="36" y="922.0">LO ROM</text>
+<rect class="M10K" x="268" y="903" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="280" y="922">M10K</text>
+<text class="d M10Kt" x="344" y="922">64 KB</text>
+<rect class="M10K" x="620" y="903" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="632" y="922">M10K</text>
+<text class="d M10Kt" x="696" y="922">64 KB</text>
+<rect class="M10K" x="972" y="903" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="984" y="922">M10K</text>
+<text class="d M10Kt" x="1048" y="922">64 KB</text>
+<line class="r" x1="24" x2="1312" y1="938" y2="938"/>
+<rect class="g" x="24" y="950" width="1288" height="28" rx="4"/>
+<text class="b" x="36" y="969">YM2610, sound</text>
+<text class="t" x="36" y="1008.0">ADPCM-A samples</text>
+<rect class="CRAM1" x="268" y="989" width="340" height="28" rx="4"/>
+<text class="c CRAM1t" x="280" y="1008">CRAM1</text>
+<text class="d CRAM1t" x="344" y="1008">V ROMs, up to 16 MB</text>
+<rect class="CRAM1" x="620" y="989" width="340" height="28" rx="4"/>
+<text class="c CRAM1t" x="632" y="1008">CRAM1</text>
+<text class="d CRAM1t" x="696" y="1008">V ROMs, up to 16 MB</text>
+<rect class="CRAM1" x="972" y="989" width="340" height="28" rx="4"/>
+<text class="c CRAM1t" x="984" y="1008">CRAM1</text>
+<text class="d CRAM1t" x="1048" y="1008">PCM RAM, 1 MB</text>
+<line class="r" x1="24" x2="1312" y1="1024" y2="1024"/>
+<text class="t" x="36" y="1050.0">ADPCM-B samples</text>
+<rect class="CRAM1" x="268" y="1031" width="340" height="28" rx="4"/>
+<text class="c CRAM1t" x="280" y="1050">CRAM1</text>
+<text class="d CRAM1t" x="344" y="1050">V ROMs, up to 16 MB</text>
+<rect class="CRAM1" x="620" y="1031" width="340" height="28" rx="4"/>
+<text class="c CRAM1t" x="632" y="1050">CRAM1</text>
+<text class="d CRAM1t" x="696" y="1050">V ROMs, up to 16 MB</text>
+<text class="n" x="986" y="1050.0">Not used</text>
+<line class="r" x1="24" x2="1312" y1="1066" y2="1066"/>
+<rect class="g" x="24" y="1078" width="1288" height="28" rx="4"/>
+<text class="b" x="36" y="1097">CD system</text>
+<text class="t" x="36" y="1168.0">Sector and audio buffers</text>
+<text class="n" x="282" y="1168.0">Not used</text>
+<text class="n" x="634" y="1168.0">Not used</text>
+<rect class="M10K" x="972" y="1117" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="984" y="1136">M10K</text>
+<text class="d M10Kt" x="1048" y="1136">Sector bank, 4 sectors</text>
+<rect class="M10K" x="972" y="1149" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="984" y="1168">M10K</text>
+<text class="d M10Kt" x="1048" y="1168">LC8951 cache, 2 sectors</text>
+<rect class="M10K" x="972" y="1181" width="340" height="28" rx="4"/>
+<text class="c M10Kt" x="984" y="1200">M10K</text>
+<text class="d M10Kt" x="1048" y="1200">CD audio buffer</text>
+<line class="r" x1="24" x2="1312" y1="1216" y2="1216"/>
+<text class="m" x="24" y="1238">AES and MVS are one core, NeoMillie. For memory the mode changes one thing: only MVS uses the backup RAM and SFIX.</text>
+<text class="m" x="24" y="1258">S and M1 stay whole on CRAM0. After a load a copy engine moves part of them to the SRAM, depending on the size of the S ROM. SFIX always stays on CRAM0.</text>
+</svg>

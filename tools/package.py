@@ -97,7 +97,8 @@ def members(rev, version):
         yield "Platforms/ng.json", json.dumps(PLATFORM, indent=2).encode()
     else:
         yield f"Platforms/{platform}.json", (ROOT / "pocket" / json_dir / f"{platform}.json").read_bytes()
-    yield f"Platforms/_images/{platform}.bin", image_bytes(platform)
+    if platform == "ngcd":      # the ng image is shared by every Neo Geo core on the library, so this one ships none
+        yield f"Platforms/_images/{platform}.bin", image_bytes(platform)
     # Named per core: both zips unzip to the card's root, and the second would overwrite a shared name
     yield f"{AUTHOR}-{name}-README.txt", (README if platform == "ng" else README_CD).format(core=core).encode()
     yield f"{AUTHOR}-LICENSE.txt", (ROOT / "LICENSE").read_bytes()
