@@ -146,7 +146,7 @@ module tb_topcd;
         .oe_n(c1_oe), .we_n(c1_we), .ub_n(c1_ub), .lb_n(c1_lb), .fpga_dq_oe(dut.neogeo.SDRAM_MUX.u_cram1.dq_oe)
     );
     sram_model #(.POLL_NS(2.0)) mem_s (
-        .a(s_a), .dq(s_dq), .oe_n(s_oe), .we_n(s_we), .ub_n(s_ub), .lb_n(s_lb), .fpga_dq_oe(dut.neogeo.FIXRAM.dq_oe),
+        .a(s_a), .dq(s_dq), .oe_n(s_oe), .we_n(s_we), .ub_n(s_ub), .lb_n(s_lb), .fpga_dq_oe(dut.neogeo.SRAM_PORT.dq_oe),
         .cut_write_ok(1'b0)
     );
 
@@ -1058,18 +1058,17 @@ module tb_topcd;
         // counts 24 lost clocks for each. The bench class for it is "other write"
         check(tas_n != 0 && n_all == st[C_BIOS].n + st[C_PROG_R].n + st[C_PROG_W].n + tas_n,
               $sformatf("%0d counted cycles, the BIOS, PROG RAM read and write classes have %0d and %0d TAS", n_all, st[C_BIOS].n + st[C_PROG_R].n + st[C_PROG_W].n, tas_n));
-        check(dut.wait_ctr.LAYOUT == 3, "the counter's layout is not the CD one");
         // The CD side: every count exact here, and the program has done each of them by now
-        check(dut.wait_ctr.g_cd.n_exch == 16'(cd_n[0]) && dut.wait_ctr.g_cd.n_fix == 24'(cd_n[1]) && dut.wait_ctr.g_cd.n_spr == 24'(cd_n[2]) &&
-              dut.wait_ctr.g_cd.n_pcm == 24'(cd_n[3]) && dut.wait_ctr.g_cd.n_z80 == 16'(cd_n[4]) && dut.wait_ctr.g_cd.n_ferr == 8'(cd_n[5]),
-              $sformatf("CD counts %0d %0d %0d %0d %0d, the bench counted %0d %0d %0d %0d %0d", dut.wait_ctr.g_cd.n_exch, dut.wait_ctr.g_cd.n_fix,
-                        dut.wait_ctr.g_cd.n_spr, dut.wait_ctr.g_cd.n_pcm, dut.wait_ctr.g_cd.n_z80, cd_n[0], cd_n[1], cd_n[2], cd_n[3], cd_n[4]));
+        check(dut.wait_ctr.n_exch == 16'(cd_n[0]) && dut.wait_ctr.n_fix == 24'(cd_n[1]) && dut.wait_ctr.n_spr == 24'(cd_n[2]) &&
+              dut.wait_ctr.n_pcm == 24'(cd_n[3]) && dut.wait_ctr.n_z80 == 16'(cd_n[4]) && dut.wait_ctr.n_ferr == 8'(cd_n[5]),
+              $sformatf("CD counts %0d %0d %0d %0d %0d, the bench counted %0d %0d %0d %0d %0d", dut.wait_ctr.n_exch, dut.wait_ctr.n_fix,
+                        dut.wait_ctr.n_spr, dut.wait_ctr.n_pcm, dut.wait_ctr.n_z80, cd_n[0], cd_n[1], cd_n[2], cd_n[3], cd_n[4]));
         check(cd_n[0] != 0 && cd_n[1] >= 32 && cd_n[2] != 0 && cd_n[3] != 0 && cd_n[4] != 0,
               $sformatf("a count of the CD side is zero: %0d %0d %0d %0d %0d", cd_n[0], cd_n[1], cd_n[2], cd_n[3], cd_n[4]));
         // What the program uploaded, by the 68K and by DMA, whole runs of it
-        check(dut.wait_ctr.g_cd.n_fix == 24'(program_runs * (FIX_CPU_BYTES + FIX_DMA_BYTES)),
+        check(dut.wait_ctr.n_fix == 24'(program_runs * (FIX_CPU_BYTES + FIX_DMA_BYTES)),
               $sformatf("the counter has %0d FIX writes, %0d runs of the program made %0d by the 68K and %0d by DMA",
-                        dut.wait_ctr.g_cd.n_fix, program_runs, program_runs * FIX_CPU_BYTES, program_runs * FIX_DMA_BYTES));
+                        dut.wait_ctr.n_fix, program_runs, program_runs * FIX_CPU_BYTES, program_runs * FIX_DMA_BYTES));
 
         // The file on exit: the copy of the last tick through the bridge
         @(posedge dut.core_vblank);

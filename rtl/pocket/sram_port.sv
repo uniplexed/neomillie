@@ -5,9 +5,10 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// FIX RAM of the CD build in the Analogue Pocket's AS6C2016-55BIN (128K x 16 asynchronous SRAM, 55 ns):
-// SRAM word 0x0000-0xFFFF, 128 KB. It takes sram_ctrl's place: the CD's work RAM is PROG RAM, and there is no
-// clear, as the BIOS uploads the fix. Nothing here relies on a reset: an access always runs to its end.
+// The Analogue Pocket's AS6C2016-55BIN (128K x 16 asynchronous SRAM, 55 ns), as a port of pocket_mem_mux's arbiter.
+// The CD build keeps FIX RAM in it, the cart build S and M1 ROMs: see mem_map.svh. There is no clear, as the
+// BIOS uploads the CD's fix and the mux copies the cart's ROMs. Nothing here relies on a reset: an access always runs
+// to its end.
 //
 // One access at a time, from pocket_mem_mux's arbiter: req toggles with we, word, be and wdata stable, and ack
 // is made equal to req when the access is over. The two are in the related CLK_96M: a CLK_48M edge sees req at
@@ -29,7 +30,7 @@
 //
 // From PCK2's fall: a CLK_96M to the mux's arbiter, a CLK_48M at most to the address, RD_CLKS to the data and a
 // CLK_96M to SROM_DATA, 13 or 14 clocks of CLK_96M against FIX_DEADLINE's 23.
-module cd_fix_sram #(
+module sram_port #(
     parameter RD_CLKS      = 5,
     parameter RELEASE_CLKS = 3,
     parameter WE_CLKS      = 3
@@ -38,7 +39,7 @@ module cd_fix_sram #(
 
     input             req,          // toggle
     input             we,
-    input      [15:0] word,
+    input      [16:0] word,
     input       [1:0] be,           // bit 1 high byte, bit 0 low byte, for writes
     input      [15:0] wdata,
     output reg        ack = 0,      // toggle, equal to req when the access is over
@@ -57,11 +58,11 @@ localparam [2:0] S_IDLE = 0, S_READ = 1, S_RELEASE = 2, S_DATA = 3, S_PULSE = 4,
 
 reg   [2:0] state = S_IDLE;
 reg   [2:0] cnt = 0;
-reg  [15:0] a_r = 0;
+reg  [16:0] a_r = 0;
 reg  [15:0] dq_o = 0;
 reg   [1:0] dq_oe = 0;
 
-assign sram_a = {1'b0, a_r};
+assign sram_a = a_r;
 assign sram_dq[7:0]  = dq_oe[0] ? dq_o[7:0]  : 8'bz;
 assign sram_dq[15:8] = dq_oe[1] ? dq_o[15:8] : 8'bz;
 

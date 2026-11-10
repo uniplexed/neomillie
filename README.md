@@ -10,6 +10,10 @@ Pocket hardware layer.
 | `uniplexed.NeoMillie` | MVS and AES cartridge games | Works on the games tried |
 | `uniplexed.NeoMillieCD` | Neo Geo CD discs, with two automatic modes: CD at 1x and CDZ at 2x | Works on the discs below |
 
+**New in NeoMillie 0.5.1: a new memory layout for the cartridge core.** The 68000 waits far less for the ROM memory: 0.000% of its
+clocks lost on Metal Slug X, against 1.354% before. Saves are written on Reset Core as well as on Quit. Millie's icon is no longer
+inverted on the Pocket's menu, and the Platform banner is new.
+
 **New in NeoMillieCD 0.5.2: memory card saves reach the SD card.** On 0.5.0 and 0.5.1 a game saved to the card and could
 load it until you left the core, but the file was not written on Quit, so the save was lost. Please update. Saves made on
 those versions cannot be recovered.
@@ -52,6 +56,8 @@ SD card, merging folders. The packages also add the `ng` and `ngcd` platform ent
 
 ## The CD core
 
+The memory layout of this core is in [Memory layout](#memory-layout).
+
 ### Speed and the CD/CDZ setting
 
 | CD/CDZ | Reads the disc at | Time per sector |
@@ -67,7 +73,7 @@ to set. The SYSTEM item in the UniBIOS's own menu has no effect in this core, wh
 
 ### Tested discs
 
-All with `uni-bioscd.rom`, on a Pocket. "Build" is the version the row was run on: 0.5.1 has the same core as this release, 0.5.2, which only changes how the
+All with `uni-bioscd.rom`, on a Pocket. "Build" is the version the row was run on: 0.5.1, 0.5.2, which only changes how the
 memory card file is named, and 0.3.5 is a debug build with the same fix for the 2x stop, plus a counter and a separate speed setting, so its 1x rows have
 CD/CDZ on, which this release does not offer at 1x.
 
@@ -149,15 +155,17 @@ Menu: Reset Core, CD/CDZ, Region (US, EU, JP, AS), 304 or 320 wide, and four asp
 
 ## The cartridge core
 
+The memory layout of this core is in [Memory layout](#memory-layout).
+
 Slots: `Game JSON Setup` is the pick from the list, and the game's JSON file fills SROM, PROG, PROG1, CROM, MROM and
 VROM. BIOS, LO and SFIX are the fixed files above. Saves: `Memory Card` and `Backup Ram` (`backup.bak`).
 
-Menu: Reset Core, MVS/AES, PAL output, 304 or 320 wide, and four aspect ratios for the scaler.
+Menu: Reset Core, AES/MVS (on is MVS), PAL output, 304 or 320 wide, and four aspect ratios for the scaler.
 
 Tested on one Pocket and working: Metal Slug 3 (memory card save and read-back after a power cycle), KOF '98, Garou,
-Samurai Shodown V Special, The Super Spy, Art of Fighting 1 (jukebox with stereo), changing MVS/AES both ways with a
-game running, and Reset Core. On Metal Slug X, first mission, one play, the 68000 lost 1.354% of its clocks waiting for
-the ROM memory (worst frame 2.295%). Those ran on earlier builds. On 0.5.0, a game picked from the core's list played and
+Samurai Shodown V Special, The Super Spy, Art of Fighting 1 (jukebox with stereo), changing AES/MVS both ways with a
+game running, and Reset Core. On Metal Slug X, first mission, one play, the 68000 lost 0.000% of its clocks waiting for
+the ROM memory with this memory layout, against 1.354% before it. Those ran on earlier builds. On 0.5.0, a game picked from the core's list played and
 its memory card save was there after powering off.
 
 Limits:
@@ -169,6 +177,13 @@ Limits:
   above ran with the Overdrive's JSON set, so most of this list has not been tried.
 - Saves from the Overdrive core do not load in this one. Its `backup.bak` has the bytes of each 32-bit word reversed,
   its `.sav` has the two halves of each word swapped, and the folder under `Saves/ng/` differs. There is no converter.
+
+## Memory layout
+
+![Which chip holds each ROM and RAM in the two cores](docs/memory-layout.svg)
+
+[docs/memory.md](docs/memory.md) has the addresses, the arbitration of each chip, the timing budgets including `RD_WAIT`, the saves and how to
+measure and change them.
 
 ## Building from source
 
@@ -183,11 +198,11 @@ Quartus build (Quartus Prime Lite 25.1) with the ALM and M10K budget check, then
     python tools/build.py neogeo       # or neogeocd
     python tools/package.py neogeo <version>
 
-`neogeocd_wait` builds the CD core's debug version: it keeps CD Speed and Lid open in the menu, and writes counters to
+`neogeocd_debug` builds the CD core's debug version: it keeps CD Speed and Lid open in the menu, and writes counters to
 `wait.sav`, which `tools/check_wait_save.py` reads.
 
-Fit of this release on the 5CEBA4F23C8, of 18,480 ALMs and 308 M10K: cartridge core 8,695 ALMs and 272 M10K, CD core
-11,611 ALMs and 281 M10K, with no negative slack in either.
+Fit on the 5CEBA4F23C8, of 18,480 ALMs and 308 M10K: NeoMillie 0.5.1 takes 8,994 ALMs and 280 M10K, with no negative
+slack.
 
 ## License
 

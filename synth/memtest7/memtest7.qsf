@@ -1,6 +1,0 @@
-# The memory self-test with RD_WAIT 7, the way the Overdrive reads. It violates tAA on paper:
-# whether that fails on real chips is what this core measures.
-
-source ../memtest/memtest.qsf
-
-set_global_assignment -name VERILOG_MACRO "MEMTEST_RD_WAIT=7"

@@ -1,6 +1,0 @@
-# The Neo Geo CD core with RD_WAIT 7, a test build.
-
-source ../neogeocd_core.qsf
-
-set_global_assignment -name VERILOG_MACRO "NEOGEO_RD_WAIT=7"
-set_global_assignment -name VERILOG_MACRO "NEOGEO_READY_COMB=1"

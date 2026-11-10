@@ -68,7 +68,8 @@ module tb_apf_loader;
     wire  [2:0] video_slot;
     wire [14:0] sram_addr;
     wire [11:0] memcard_addr;
-    wire        sram_wr, memcard_wr;
+    wire        bk_req, bk_we, memcard_wr;
+    logic       bk_ack = 0;
     logic [15:0] sram_q = 0, card_q = 0;
 
     logic        dsu = 0;                   // dataslot_update of core_bridge_cmd.v
@@ -76,6 +77,27 @@ module tb_apf_loader;
     logic [31:0] dsu_size = 0;
     wire  [31:0] disc_size, disc_bin_size;
     wire         cd_mount_req;
+
+    // The host's side of a data slot write: done falls, and rises when the file is written
+    wire         rs_busy, rs_write;
+    wire  [15:0] rs_slot;
+    wire  [31:0] rs_bridge, rs_length;
+    logic        rs_done = 0, rs_write_d = 0, rs_answer = 1;
+    int          rs_t = 0;
+    logic [79:0] rs_log[$];
+
+    always @(posedge clk74) begin
+        rs_write_d <= rs_write;
+        if (rs_write && !rs_write_d && rs_answer) begin
+            rs_log.push_back({rs_slot, rs_bridge, rs_length});
+            rs_done <= 0;
+            rs_t    <= 40;
+        end
+        else if (rs_t != 0) begin
+            rs_t <= rs_t - 1;
+            if (rs_t == 1) rs_done <= 1;
+        end
+    end
 
     apf_loader #(.RESET_HOLD_CLKS(HOLD)) dut (
         .clk_74a(clk74), .CLK_96M(clk96),
@@ -92,9 +114,11 @@ module tb_apf_loader;
         .status(status), .cfg(cfg), .rtc(rtc), .v2_offset(v2_offset), .v2rom_mask(v2rom_mask),
         .width320(width320), .video_slot(video_slot), .mvs(mvs),
         .apf_core_reset(apf_core_reset), .prom1_conflict(prom1_conflict),
-        .sram_addr(sram_addr), .sram_wr(sram_wr), .memcard_addr(memcard_addr), .memcard_wr(memcard_wr),
+        .sram_addr(sram_addr), .bk_req(bk_req), .bk_we(bk_we), .bk_ack(bk_ack), .memcard_addr(memcard_addr), .memcard_wr(memcard_wr),
         .sd_buff_dout(save_dout), .sram_buff_dout(sram_q), .card_buff_dout(card_q),
-        .disc_size(disc_size), .disc_bin_size(disc_bin_size), .cd_mount_req(cd_mount_req)
+        .disc_size(disc_size), .disc_bin_size(disc_bin_size), .cd_mount_req(cd_mount_req),
+        .rs_busy(rs_busy), .rs_write(rs_write), .rs_slot(rs_slot), .rs_bridge(rs_bridge), .rs_length(rs_length),
+        .rs_host_free(rs_t == 0), .rs_host_done(rs_done)
     );
 
     // The CD build, on the same bridge and with a data table of its own. Its ioctl and saves go nowhere
@@ -124,16 +148,24 @@ module tb_apf_loader;
         .datatable_addr(dtc_addr), .datatable_wren(dtc_wren), .datatable_data(dtc_data), .datatable_q(dtc_q),
         .cont1_key(key1), .cont2_key(key2), .cont3_key(key3), .cont4_key(key4),
         .status(cd_status), .cfg(cd_cfg), .mvs(cd_mvs),
-        .sram_buff_dout(16'd0), .card_buff_dout(16'd0),
-        .disc_size(cd_disc_size), .disc_bin_size(cd_disc_bin_size), .cd_mount_req(cd_mount)
+        .bk_ack(1'b0), .sram_buff_dout(16'd0), .card_buff_dout(16'd0),
+        .disc_size(cd_disc_size), .disc_bin_size(cd_disc_bin_size), .cd_mount_req(cd_mount),
+        .rs_host_free(1'b1), .rs_host_done(1'b1)
     );
 
-    // ---- The saves: port B of backup.v and memcard.v, clk_sys, 1 clock of read latency ----
+    // ---- The saves: the mux's handshake to CRAM0, at the worst of 40 clocks an access; port B of memcard.v, clk_sys ----
     logic [15:0] bak [0:32767];
     logic [15:0] card [0:4095];
+    int          bk_t = 0;
+    always @(posedge clk96) begin
+        bk_t <= bk_req != bk_ack ? bk_t + 1 : 0;
+        if (bk_req != bk_ack && bk_t == 39) begin
+            if (bk_we) bak[sram_addr] = save_dout;
+            sram_q <= bak[sram_addr];
+            bk_ack <= bk_req;
+        end
+    end
     always @(posedge clk48) begin
-        if (sram_wr) bak[sram_addr] = save_dout;
-        sram_q <= bak[sram_addr];
         if (memcard_wr) card[memcard_addr] = save_dout;
         card_q <= card[memcard_addr];
     end
@@ -180,6 +212,7 @@ module tb_apf_loader;
         .adpcmb_addr(25'd0), .adpcmb_dout(), .adpcmb_req(1'b0), .adpcmb_ack(),
         .v2_offset(v2_offset),
         .m1_addr(19'd0), .m1_dout(), .m1_req(1'b0), .m1_ack(),
+        .BK_RD(1'b0), .BK_WR(2'b00), .bk_req(1'b0), .bk_we(1'b0), .bk_addr(15'd0), .bk_wdata(16'd0), .bk_ack(), .bk_rdata(), .ROM_COPY_BUSY(),
         .dram_dq(dram_dq), .dram_a(dram_a), .dram_dqm(dram_dqm), .dram_ba(dram_ba), .dram_we_n(dram_we_n),
         .dram_ras_n(dram_ras_n), .dram_cas_n(dram_cas_n), .dram_cke(dram_cke), .dram_clk(dram_clk),
         .cram0_a(c0_a), .cram0_dq(c0_dq), .cram0_wait(1'b0), .cram0_clk(c0_clk), .cram0_adv_n(c0_adv),
@@ -804,7 +837,7 @@ module tb_apf_loader;
         check16("card word 4095", card[4095], 16'h8877);
         bfm.write32(32'h7000_0000, 32'h99AA_BBCC);
         bfm.write32(32'h7000_FFFC, 32'hDDEE_FF00);      // top of the 64 KB file
-        repeat (40) @(posedge clk96);
+        repeat (120) @(posedge clk96);      // two accesses of 40 clocks, the bench's slowest CRAM0
         check16("backup word 0", bak[0], 16'hAA99);
         check16("backup word 1", bak[1], 16'hCCBB);
         check16("backup word 32766", bak[32766], 16'hEEDD);
@@ -836,6 +869,41 @@ module tb_apf_loader;
         if (file[0] !== 32'h5566_7788) fail($sformatf("top of the card file is %h", file[0]));
         bfm.read_file(32'h7000_FFFC, 1, file);
         if (file[0] !== 32'hDDEE_FF00) fail($sformatf("top of the backup file is %h", file[0]));
+    endtask
+
+    task automatic reset_core_and_wait(input string what);
+        rs_log.delete();
+        bfm.write32(32'hF000_0100, 1);
+        repeat (20) @(posedge clk74);
+        if (!apf_core_reset) fail({what, ": no reset"});
+        for (int i = 0; i < 16 * HOLD && rs_busy; i++) @(posedge clk74);
+        if (rs_busy) fail({what, ": still saving"});
+        if (!apf_core_reset) fail({what, ": the core left reset during the save"});
+        repeat (2 * HOLD) @(posedge clk74);
+        if (apf_core_reset) fail({what, ": stuck in reset"});
+    endtask
+
+    task automatic test_reset_core_writes_saves();
+        begin_test("test_reset_core_writes_saves");
+        bfm.write32(32'hF000_0108, 1);
+        repeat (2 * HOLD) @(posedge clk74);
+        reset_core_and_wait("MVS");
+        if (rs_log.size() != 2 || rs_log[0] !== {16'h0101, 32'h6000_0000, 32'd8192} || rs_log[1] !== {16'h0102, 32'h7000_0000, 32'd65536})
+            fail($sformatf("MVS: %0d writes", rs_log.size()));
+
+        bfm.write32(32'hF000_0108, 0);
+        repeat (2 * HOLD) @(posedge clk74);
+        reset_core_and_wait("AES");
+        if (rs_log.size() != 1 || rs_log[0] !== {16'h0101, 32'h6000_0000, 32'd8192}) fail($sformatf("AES: %0d writes", rs_log.size()));
+
+        // A host that never answers does not leave the core in reset
+        rs_answer = 0;
+        rs_done   = 0;
+        reset_core_and_wait("no answer");
+        rs_answer = 1;
+
+        bfm.write32(32'hF000_0108, 1);
+        repeat (2 * HOLD) @(posedge clk74);
     endtask
 
     task automatic test_datatable_size_loop();
@@ -1157,6 +1225,7 @@ module tb_apf_loader;
         test_spr_convert_block();
         test_block_boundaries();
         test_save_roundtrip();
+        test_reset_core_writes_saves();
         test_download_window();
         test_prom1_conflict();
         test_cd_settings();

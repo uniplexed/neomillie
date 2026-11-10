@@ -16,11 +16,12 @@
 //============================================================================
 
 // All clocks are CLK_96M. Each chip has one registered master:
-//   CRAM0  loader > 68K > fix (cart) > CD write > Z80, and a Z80 access starts only in the window after PCK2 falls
+//   CRAM0  loader > save path and posted backup write (cart) > 68K > fix (cart) > CD write > Z80 > S and M1 copy,
+//          and a Z80 access starts only in the window after PCK2 falls
 //   CRAM1  loader > CD write > ADPCM-A > ADPCM-B
 //   SDRAM  sprite > CD read > loader > CD write; refresh is a toggle the controller takes first, spaced apart
 //          here, and a slot that finds a CD write waiting passes to it, as sdram_mux ranks them
-//   SRAM   fix (CD) > CD read > CD write, through cd_fix_sram
+//   SRAM   fix > CD read > CD write, or fix > copy write > Z80 in the cart core, through sram_port
 //
 // Requests stay pending until served, so clients arriving together are all served in order, and
 // no path relies on the CPUs being in reset. With nRESET low no CPU or ADPCM read reaches a CRAM
@@ -62,12 +63,15 @@ module pocket_mem_mux #(
     parameter RD_WAIT = 8,      // of cram_ctrl; the core builds 8 (neogeo.qsf), Mazamars312's core samples at 6
     // PROM_DATA and PROM_DATA_READY in the ack clock, a clock sooner, as Mazamars312's cram_16bit.v
     parameter bit READY_COMB = 0,
-    // Keep the last M1 word: the Z80's read of its other byte takes no CRAM0 access
-    parameter bit Z80_WORD_BUF = 0,
     // Posted CD writes queued. 2 for the 68K's one per 32 clocks; a faster 68K may want more.
     parameter CD_WQ_DEPTH = 2,
     // The CD paths exist. SYSTEM_CDx turns them on at run time
     parameter bit CD_BUILD = 0,
+    // The cart core's layout: S and M1 in the SRAM, MVS backup RAM in CRAM0
+    parameter bit ROM_SRAM = 0,
+    // Direct-mapped read caches for what stays on CRAM0: 2K words of M1 (5 M10K), 1K words of fix (3 M10K)
+    parameter bit M1_CACHE = 0,
+    parameter bit FIX_CACHE = 0,
     // Memory test only: loader index 14 writes CRAM0 linearly, as the indices above leave holes
     parameter bit RAW_CRAM0 = 0
 ) (
@@ -94,6 +98,18 @@ module pocket_mem_mux #(
     input       [1:0] FIX_BANK,
     input             FIX_EN,
     output reg [15:0] SROM_DATA = 0,
+
+    // ROM_SRAM: the 68K's reads and writes of the MVS backup RAM, and the save path. bk_req toggles, with the rest
+    // stable until bk_ack equals it
+    input             BK_RD,
+    input       [1:0] BK_WR,            // {high, low} lane
+    input             bk_req,
+    input             bk_we,
+    input      [14:0] bk_addr,
+    input      [15:0] bk_wdata,
+    output reg        bk_ack = 0,
+    output reg [15:0] bk_rdata = 0,
+    output            ROM_COPY_BUSY,    // the SRAM's copy of S and M1 is not complete: hold the core in reset
 
     input             PCK1,
     input      [26:0] CROM_ADDR,
@@ -148,10 +164,10 @@ module pocket_mem_mux #(
     input             m1_req,
     output reg        m1_ack = 0,
 
-    // FIX RAM of the CD build: cd_fix_sram, on the related CLK_48M. Unused in the cart build
+    // The SRAM: sram_port, on the related CLK_48M. FIX RAM of the CD build, S and M1 with ROM_SRAM
     output reg        fx_req = 0,       // toggle
     output reg        fx_we = 0,
-    output reg [15:0] fx_word = 0,
+    output reg [16:0] fx_word = 0,
     output reg  [1:0] fx_be = 2'b11,
     output reg [15:0] fx_wdata = 0,
     input             fx_ack,
@@ -382,7 +398,8 @@ wire use_cd_fix = cd & CD_USE_FIX;
 wire use_cd_spr = cd & CD_USE_SPR;
 
 wire cd_rd_sig = cd & CD_EXT_RD;
-wire m68k_sig  = ~&{nSROMOE, nROMOE, nPORTOE} | cd_rd_sig;
+wire bk_rd_sig = ROM_SRAM & BK_RD;
+wire m68k_sig  = ~&{nSROMOE, nROMOE, nPORTOE} | cd_rd_sig | bk_rd_sig;
 wire pck1_fall = pck1_sr & ~PCK1;
 wire req_68k   = nRESET & m68k_sig & ~m68k_sr;
 wire req_crom  = nRESET & pck1_fall & SPR_EN & ~use_cd_spr & ~REFRESH_EN;
@@ -401,24 +418,33 @@ localparam [1:0] C1_LOADER = 0, C1_A = 1, C1_B = 2;
 localparam [1:0] FX_VIDEO = 0, FX_RD = 1, FX_WR = 2;
 
 reg  [1:0] c0_owner = C0_LOADER, c1_owner = C1_LOADER;
+reg        c0_sv = 0, c0_cp = 0;    // CRAM0's access is the save path's or the copy's: flags, as c1_cd_wr
 reg        c1_cd_wr = 0;     // CRAM1's write is the CD's. A flag, as a fourth owner would be a fourth FSM state
 reg  [6:0] z80_wait = 0;
 
+// What the SRAM holds, with ROM_SRAM: see mem_map.svh. CRAM0 keeps both ROMs whole, and SFIX is only there.
+reg         s_big = 0;              // the S file passed 128 KB
+wire        fix_in_sram  = ROM_SRAM & nSYSTEM_G & ~s_big;
+wire        m1_in_sram   = ROM_SRAM & (s_big ? ~m1_addr[18] : m1_addr[18:17] == 2'd0);
+wire [16:0] m1_sram_word = s_big ? m1_addr[17:1] : {1'b1, m1_addr[16:1]};
+
 // A toggle request stays different from its ack until the clock after the access ends
 wire want_68k = m68k_pend | req_68k;
-wire want_fix = (fix_pend | req_fix) & ~cd;
-reg         m1_buf_valid = 0;
-reg  [18:1] m1_buf_addr = 0;
-reg  [15:0] m1_buf_data = 0;
-wire        m1_hit = Z80_WORD_BUF & m1_buf_valid & (m1_addr[18:1] == m1_buf_addr);
+// A fix with the cache on waits a clock for its lookup: the word is on the RAM's output when fix_pend is up
+wire fixc_hit;
+wire want_fix = (FIX_CACHE ? fix_pend & ~fixc_hit : fix_pend | req_fix) & ~cd & ~fix_in_sram;
+wire        m1c_hit, m1c_seen_w;
+wire [15:0] m1c_data;
 
-wire want_m1  = nRESET & (m1_req != m1_ack) & ~(c0_req & c0_owner == C0_M1) & ~m1_hit & (z80_wait <= Z80_WINDOW);
+wire want_m1  = nRESET & (m1_req != m1_ack) & ~(c0_req & c0_owner == C0_M1) & ~m1c_hit & ~m1_in_sram & (z80_wait <= Z80_WINDOW)
+                & (~M1_CACHE | m1c_seen_w);
 wire want_a   = nRESET & (adpcma_req != adpcma_ack) & ~(c1_req & c1_owner == C1_A);
 wire want_b   = nRESET & (adpcmb_req != adpcmb_ack) & ~(c1_req & c1_owner == C1_B);
 
 // ---- Chip addresses of the clients (word addresses) ----
 
-wire [23:1] m68k_word = cd_rd_sig  ? {MAP_PROG[23:21], DMA_RUNNING ? DMA_ADDR_IN[20:1] : M68K_ADDR[20:1]} :
+wire [23:1] m68k_word = bk_rd_sig  ? {MAP_BACKUP[23:16], M68K_ADDR[15:1]} :
+                        cd_rd_sig  ? {MAP_PROG[23:21], DMA_RUNNING ? DMA_ADDR_IN[20:1] : M68K_ADDR[20:1]} :
                         ~nROMOE    ? {MAP_P1[23:20], M68K_ADDR[19:1]} :
                         ~nPORTOE   ? MAP_P2[23:1] + P2ROM_ADDR[23:1] :
                         cd ? {MAP_BIOS[23:19], M68K_ADDR[18:1]} :
@@ -443,11 +469,83 @@ wire        prom_now = READY_COMB & c0_req & c0_ack & (c0_owner == C0_68K);
 assign PROM_DATA       = prom_now ? c0_rdata : prom_data_r;
 assign PROM_DATA_READY = prom_now | prom_ready_r;
 
-// ---- FIX RAM's arbiter: cd_fix_sram answers on its clock, the related CLK_48M ----
+// ---- Read caches. Filled from CRAM0, emptied by the sweep of a reset, which is what any new ROM data comes with ----
+// A lookup takes a clock, so a miss starts one later. Reset is over 1 ms long, against 2K clocks for the sweep.
+
+(* ramstyle = "M10K, no_rw_check" *) reg [23:0] m1c  [0:2047];     // {valid, m1_addr[18:12], data}
+(* ramstyle = "M10K, no_rw_check" *) reg [25:0] fixc [0:1023];     // {valid, tag, data}
+
+reg  [23:0] m1c_q = 0;
+reg  [25:0] fixc_q = 0;
+reg         m1c_req_d = 0;
+reg  [10:0] cache_clr = 0;
+
+wire  [8:0] fixc_tag   = {nSYSTEM_G, FIX_BANK, fix_tile[15:10]};
+wire        m1_pending = m1_req != m1_ack;
+
+assign m1c_seen_w = m1c_req_d == m1_req;      // the request has been up a clock, so m1c_q is for its address
+assign m1c_data   = m1c_q[15:0];
+assign m1c_hit    = M1_CACHE & ~m1_in_sram & m1_pending & m1c_seen_w & m1c_q[23] & (m1c_q[22:16] == m1_addr[18:12]);
+assign fixc_hit   = FIX_CACHE & ~fix_in_sram & fix_pend & fixc_q[25] & (fixc_q[24:16] == fixc_tag);
+
+wire m1c_fill  = nRESET & c0_req & c0_ack & (c0_owner == C0_M1);
+wire fixc_fill = nRESET & c0_req & c0_ack & (c0_owner == C0_FIX);
+
+always @(posedge CLK) begin
+    cache_clr <= cache_clr + 1'd1;
+    if (M1_CACHE) begin
+        m1c_q    <= m1c[m1_addr[11:1]];
+        m1c_req_d <= m1_req;
+        if (!nRESET)       m1c[cache_clr]     <= 24'd0;
+        else if (m1c_fill) m1c[m1_addr[11:1]] <= {1'b1, m1_addr[18:12], c0_rdata};
+    end
+    if (FIX_CACHE) begin
+        fixc_q <= fixc[fix_tile[9:0]];
+        if (!nRESET)        fixc[cache_clr[9:0]] <= 26'd0;
+        else if (fixc_fill) fixc[fix_tile[9:0]]  <= {1'b1, fixc_tag, c0_rdata};
+    end
+end
+
+// ---- MVS backup RAM, ROM_SRAM ----
+// A 68K write is posted: the next one is 32 clocks away at least and the entry leaves when CRAM0 takes it, behind one
+// access at most, as it ranks above all but the loader and the save path. Ranking above the 68K, a read cannot overtake it.
+
+reg         bk_wr_sr = 0, bk_wr_pend = 0;
+reg  [14:0] bk_wr_addr = 0;
+reg  [15:0] bk_wr_data = 0;
+reg   [1:0] bk_wr_be = 0;
+
+wire bk_wr_edge = ROM_SRAM & nRESET & (|BK_WR) & ~bk_wr_sr;
+wire want_sv    = ROM_SRAM & (bk_req != bk_ack) & ~(c0_req & c0_sv);
+
+// ---- The SRAM's arbiter: sram_port answers on its clock, the related CLK_48M ----
+
+localparam bit FX_USED = CD_BUILD | ROM_SRAM;
 
 reg        fx_run = 0;
-reg  [1:0] fx_owner = FX_VIDEO;
-wire       fx_done = cd & fx_run & (fx_req == fx_ack);
+reg  [1:0] fx_owner = FX_VIDEO;     // ROM_SRAM: FX_RD is M1 and FX_WR the copy
+wire       fx_on   = CD_BUILD ? cd : ROM_SRAM;
+wire       fx_done = fx_on & fx_run & (fx_req == fx_ack);
+
+wire want_m1_sram = m1_in_sram & nRESET & (m1_req != m1_ack) & ~(fx_run & fx_owner == FX_RD) & (z80_wait <= Z80_WINDOW);
+
+// ---- The SRAM's copy of S and M1, ROM_SRAM ----
+// A write of either file marks it dirty and it runs when the loader is done, CRAM0's lowest client, a word at a time.
+// Between slots DL_EN falls, so it may start early: the next slot's write sends it back to the start. Doing it this way the
+// loader has no path to the SRAM and the layout can depend on the S file's size, known only at its end.
+
+localparam [2:0] CP_IDLE = 0, CP_RD = 1, CP_RD_WAIT = 2, CP_WR = 3, CP_WR_WAIT = 4;
+
+reg   [2:0] cp_st = CP_IDLE;
+reg         cp_dirty = 0;
+reg  [16:0] cp_w = 0;
+reg  [15:0] cp_data = 0;
+
+wire [23:1] cp_src = s_big    ? {MAP_M1[23:19], 1'b0, cp_w} :
+                     cp_w[16] ? {MAP_M1[23:19], 2'b00, cp_w[15:0]} :
+                                {MAP_SROM[23:19], 2'b00, cp_w[15:0]};
+
+assign ROM_COPY_BUSY = ROM_SRAM & (cp_dirty | cp_st != CP_IDLE);
 
 reg        spr_rd_run = 0, spr_wr_run = 0;
 
@@ -523,6 +621,25 @@ always @(posedge CLK) begin
     cd_wr_sr <= cd_wr_sig & nRESET & (cd_wr_sr | ~cd_wq_full);
     tr_rd_sr <= (tr_fix_sig | tr_spr_sig) & nRESET;
     z80_wait <= (pck2_sr & ~PCK2) ? 7'd0 : z80_wait + 1'd1;
+    bk_wr_sr <= (|BK_WR) & nRESET;
+
+    if (bk_wr_edge) begin
+        bk_wr_pend <= 1;
+        bk_wr_addr <= M68K_ADDR[15:1];
+        bk_wr_data <= M68K_DATA;
+        bk_wr_be   <= BK_WR;
+    end
+
+    if (ROM_SRAM && DL_EN && DL_WR && (DL_INDEX == 8'd8 || DL_INDEX == 8'd9)) cp_dirty <= 1;
+    if (ROM_SRAM && DL_EN && DL_WR && DL_INDEX == 8'd8) begin
+        if (|DL_ADDR[18:17])    s_big <= 1;
+        else if (DL_ADDR == 0)  s_big <= 0;
+    end
+    if (ROM_SRAM && cp_st == CP_IDLE && cp_dirty && !DL_EN && !dl_valid) begin
+        cp_dirty <= 0;
+        cp_w     <= 0;
+        cp_st    <= CP_RD;
+    end
 
     if (DL_EN && DL_WR && dl_full) dl_overflow <= 1;
     if (MEM_INIT) dl_overflow <= 0;
@@ -539,6 +656,10 @@ always @(posedge CLK) begin
 
     if (req_68k)  m68k_pend <= 1;
     if (req_fix)  fix_pend  <= 1;
+    if (fixc_hit) begin
+        SROM_DATA <= fixc_q[15:0];
+        fix_pend  <= 0;
+    end
     if (req_crom) crom_pend <= 1;
     if (CD_BUILD && req_tr_rd) begin
         if (tr_fix_sig) tr_fix_pend <= 1;
@@ -561,24 +682,28 @@ always @(posedge CLK) begin
             C0_M1: begin
                 m1_dout <= m1_addr[0] ? c0_rdata[15:8] : c0_rdata[7:0];
                 m1_ack  <= m1_req;
-                m1_buf_valid <= 1;
-                m1_buf_addr  <= m1_addr[18:1];
-                m1_buf_data  <= c0_rdata;
             end
             default: ;
         endcase
+        if (ROM_SRAM && c0_sv) begin
+            bk_rdata <= c0_rdata;
+            bk_ack   <= bk_req;
+        end
+        if (ROM_SRAM && c0_cp) begin
+            cp_data <= c0_rdata;
+            cp_st   <= CP_WR;
+        end
     end
-    if (m1_hit && m1_req != m1_ack && !(c0_req && c0_owner == C0_M1)) begin
-        m1_dout <= m1_addr[0] ? m1_buf_data[15:8] : m1_buf_data[7:0];
+    if (m1c_hit && m1_req != m1_ack && !(c0_req && c0_owner == C0_M1)) begin
+        m1_dout <= m1_addr[0] ? m1c_data[15:8] : m1c_data[7:0];
         m1_ack  <= m1_req;
     end
-    // The loader may write the buffered word. CD writes cannot: SYSTEM_CDx is 0 in every build that
-    // turns the buffer on, and the CD Z80 does not read CRAM0.
-    if (dl_c0) m1_buf_valid <= 0;
     // The master changes req on the edge it sees ack: cram_ctrl looks at it again a clock later
     if (!c0_req || c0_ack) begin
         c0_we <= 0;
         c0_be <= 2'b11;
+        c0_sv <= 0;
+        c0_cp <= 0;
         if (dl_c0) begin
             c0_req   <= 1;
             c0_we    <= 1;
@@ -586,6 +711,23 @@ always @(posedge CLK) begin
             c0_addr  <= dl_head_word[23:1];
             c0_wdata <= dl_head_data;
             dl_rp    <= dl_rp + 1'd1;
+        end
+        else if (want_sv) begin
+            c0_req   <= 1;
+            c0_we    <= bk_we;
+            c0_owner <= C0_LOADER;
+            c0_sv    <= 1;
+            c0_addr  <= {MAP_BACKUP[23:16], bk_addr};
+            c0_wdata <= bk_wdata;
+        end
+        else if (ROM_SRAM && bk_wr_pend) begin
+            c0_req     <= 1;
+            c0_we      <= 1;
+            c0_owner   <= C0_LOADER;
+            c0_addr    <= {MAP_BACKUP[23:16], bk_wr_addr};
+            c0_wdata   <= bk_wr_data;
+            c0_be      <= bk_wr_be;
+            bk_wr_pend <= 0;
         end
         else if (want_68k) begin
             c0_req    <= 1;
@@ -612,6 +754,13 @@ always @(posedge CLK) begin
             c0_req   <= 1;
             c0_owner <= C0_M1;
             c0_addr  <= m1_word;
+        end
+        else if (ROM_SRAM && cp_st == CP_RD) begin
+            c0_req   <= 1;
+            c0_owner <= C0_LOADER;
+            c0_cp    <= 1;
+            c0_addr  <= cp_src;
+            cp_st    <= CP_RD_WAIT;
         end
     end
 
@@ -717,41 +866,65 @@ always @(posedge CLK) begin
         end
     end
 
-    // ---- SRAM, CD build ----
-    if (CD_BUILD && fx_done) begin
+    // ---- SRAM ----
+    if (FX_USED && fx_done) begin
         fx_run <= 0;
         case (fx_owner)
             FX_VIDEO: SROM_DATA <= fx_rdata;
-            FX_RD: begin
+            FX_RD: if (CD_BUILD) begin
                 prom_data_r  <= fx_rdata;
                 prom_ready_r <= 1;
+            end else begin
+                m1_dout <= m1_addr[0] ? fx_rdata[15:8] : fx_rdata[7:0];
+                m1_ack  <= m1_req;
             end
-            default: CD_PCM_DTACK <= 1;
+            default: if (CD_BUILD) CD_PCM_DTACK <= 1;
+            else begin
+                cp_w  <= cp_w + 1'd1;
+                cp_st <= (&cp_w || cp_dirty) ? CP_IDLE : CP_RD;
+            end
         endcase
     end
-    if (CD_BUILD && cd && (!fx_run || fx_done)) begin
-        if (fix_pend | req_fix) begin
+    if (FX_USED && fx_on && (!fx_run || fx_done)) begin
+        if ((fix_pend | req_fix) && (CD_BUILD || fix_in_sram)) begin
             fix_pend <= 0;
             fx_run   <= 1;
             fx_req   <= ~fx_req;
             fx_owner <= FX_VIDEO;
             fx_we    <= 0;
-            fx_word  <= fix_tile;
+            fx_word  <= {1'b0, fix_tile};
         end
-        else if (tr_fix_pend) begin
+        else if (!CD_BUILD && cp_st == CP_WR) begin
+            fx_run   <= 1;
+            fx_req   <= ~fx_req;
+            fx_owner <= FX_WR;
+            fx_we    <= 1;
+            fx_word  <= cp_w;
+            fx_wdata <= cp_data;
+            fx_be    <= 2'b11;
+            cp_st    <= CP_WR_WAIT;
+        end
+        else if (!CD_BUILD && want_m1_sram) begin
+            fx_run   <= 1;
+            fx_req   <= ~fx_req;
+            fx_owner <= FX_RD;
+            fx_we    <= 0;
+            fx_word  <= m1_sram_word;
+        end
+        else if (CD_BUILD && tr_fix_pend) begin
             tr_fix_pend <= 0;
             fx_run   <= 1;
             fx_req   <= ~fx_req;
             fx_owner <= FX_RD;
             fx_we    <= 0;
-            fx_word  <= cd_fix_word;
+            fx_word  <= {1'b0, cd_fix_word};
         end
-        else if (cd_wq_fx) begin
+        else if (CD_BUILD && cd_wq_fx) begin
             fx_run   <= 1;
             fx_req   <= ~fx_req;
             fx_owner <= FX_WR;
             fx_we    <= 1;
-            fx_word  <= cd_wq_head_word[16:1];
+            fx_word  <= {1'b0, cd_wq_head_word[16:1]};
             fx_wdata <= cd_wq_head_data;
             fx_be    <= cd_wq_head_be;
             cd_wq_rp <= cd_wq_rp + 1'd1;
@@ -775,7 +948,6 @@ always @(posedge CLK) begin
         m1_ack     <= m1_req;
         adpcma_ack <= adpcma_req;
         adpcmb_ack <= adpcmb_req;
-        m1_buf_valid <= 0;
         cd_wq_wp <= 0;
         cd_wq_rp <= 0;
     end

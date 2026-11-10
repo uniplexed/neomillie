@@ -36,8 +36,8 @@ rtl/cd/cdd_drive.sv
 rtl/cd/cd_host.sv
 rtl/cd/cd_mount.sv
 rtl/cd/cd_fetch.sv
-rtl/cd/cd_bios_model.sv
-rtl/cd/cd_fix_sram.sv
+rtl/pocket/bios_model.sv
+rtl/pocket/sram_port.sv
 rtl/cd/cd.sv
 upstream/NeoGeo_MiSTer/rtl/cd/drive.v
 rtl/cd/lc8951.v
@@ -148,7 +148,6 @@ upstream/NeoGeo_MiSTer/rtl/cells/fdm.v
 upstream/NeoGeo_MiSTer/rtl/cells/C43.v
 upstream/NeoGeo_MiSTer/rtl/cells/bd3.v
 upstream/NeoGeo_MiSTer/rtl/mem/memcard.v
-upstream/NeoGeo_MiSTer/rtl/mem/backup.v
 upstream/NeoGeo_MiSTer/rtl/mem/dpram.v
 upstream/NeoGeo_MiSTer/rtl/cpu/FX68K/fx68k.sv
 upstream/NeoGeo_MiSTer/rtl/cpu/FX68K/fx68kAlu.sv

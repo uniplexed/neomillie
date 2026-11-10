@@ -1,8 +1,0 @@
-# The released configuration, RD_WAIT 7, with the 68K wait counter (rtl/test/wait_counter.sv). A debug core.
-
-source ../neogeo_core.qsf
-
-set_global_assignment -name VERILOG_MACRO "NEOGEO_RD_WAIT=7"
-set_global_assignment -name VERILOG_MACRO "NEOGEO_READY_COMB=1"
-set_global_assignment -name VERILOG_MACRO "NEOGEO_WAIT_COUNTER"
-set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/test/wait_counter.sv

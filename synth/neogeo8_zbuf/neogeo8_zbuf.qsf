@@ -1,9 +1,0 @@
-# RD_WAIT 8 with the Z80's word buffer and the 68K wait counter (rtl/test/wait_counter.sv). A debug core.
-
-source ../neogeo_core.qsf
-
-set_global_assignment -name VERILOG_MACRO "NEOGEO_RD_WAIT=8"
-set_global_assignment -name VERILOG_MACRO "NEOGEO_READY_COMB=1"
-set_global_assignment -name VERILOG_MACRO "NEOGEO_Z80_WORD_BUF=1"
-set_global_assignment -name VERILOG_MACRO "NEOGEO_WAIT_COUNTER"
-set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/test/wait_counter.sv

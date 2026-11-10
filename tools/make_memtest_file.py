@@ -10,8 +10,6 @@
   make_memtest_file.py --print N          first N 16-bit words of the file
   make_memtest_file.py --out FILE         write the file
   make_memtest_file.py --zip memtest VER  dist/uniplexed.MemTest_VER.zip from synth/memtest
-  make_memtest_file.py --zip memtest7 VER dist/uniplexed.MemTest7_VER.zip from synth/memtest7
-  make_memtest_file.py --zip memtest6 VER dist/uniplexed.MemTest6_VER.zip from synth/memtest6
 
 File: 2^16 little-endian 16-bit words, the low half of an xorshift32 sequence, the same generator
 as memtest.sv. A package has the bit-reversed bitstream, pocket/memtest/*.json, the file under
@@ -36,8 +34,6 @@ FILES = ["memtest_cram0.bin", "memtest_cram1.bin", "memtest_sdram.bin"]     # on
 PLATFORM = {"platform": {"category": "Console", "name": "Neo Geo", "manufacturer": "SNK", "year": 1990}}
 VARIANTS = {
     "memtest": ("MemTest", "Neo Geo core memory self-test, RD_WAIT 8. Needs no ROMs."),
-    "memtest7": ("MemTest7", "Neo Geo core memory self-test, RD_WAIT 7. Needs no ROMs."),
-    "memtest6": ("MemTest6", "Neo Geo core memory self-test, RD_WAIT 6. Needs no ROMs."),
 }
 
 

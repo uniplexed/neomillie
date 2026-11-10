@@ -41,8 +41,7 @@
 // So 215/120M/10=513.3ns per byte (1902 kB/s)
 
 // POCKET: explicit port list instead of sys/emu_ports.vh. hps_io, sdram_mux, sdram, ddram, cpram,
-// video_mixer, video_freak, pll and pll_cfg are gone; the pins belong to pocket_mem_mux and sram_ctrl, or
-// cd_fix_sram in the CD build.
+// video_mixer, video_freak, pll and pll_cfg are gone; the pins belong to pocket_mem_mux and sram_port.
 module neogeo_pocket
 (
 	input         CLK_96M,
@@ -66,9 +65,11 @@ module neogeo_pocket
 	input  [23:0] v2_offset,        // R5: from the game JSON
 	input  [23:0] v2rom_mask,       // R5: used for V2ROM_MASK when non-zero
 
-	// Saves: second ports of backup and memcard, in clk_sys
+	// Saves: the cart's backup RAM through pocket_mem_mux in CLK_96M, the second port of memcard in clk_sys
 	input  [14:0] sram_addr,
-	input         sram_wr,
+	input         bk_req,
+	input         bk_we,
+	output        bk_ack,
 	input  [11:0] memcard_addr,
 	input         memcard_wr,
 	input  [15:0] sd_buff_dout,
@@ -166,10 +167,9 @@ module neogeo_pocket
 	output        sram_lb_n
 );
 
-// POCKET: work RAM clear. rst_n is synchronous, busy is a register in sram_ctrl, and status[14] holds
-// MiSTer's reset stretch until the clear has ended (core_reset = ~rst_n | busy). It must not go through
-// status[0], whose rising edge clears the ROM masks: that one is the loader's alone, on the first load.
-// The CD build has no clear to wait for: its SRAM is FIX RAM, which the BIOS uploads, so sram_busy is 0.
+// POCKET: status[14] holds MiSTer's reset stretch until the copy of S and M1 to the SRAM has ended. It must not go
+// through status[0], whose rising edge clears the ROM masks: that one is the loader's alone, on the first load.
+// The CD build has no copy to wait for: its SRAM is FIX RAM, which the BIOS uploads, so sram_busy is 0.
 reg  wram_rst_n = 0;
 wire sram_busy;
 always @(posedge CLK_48M) wram_rst_n <= ~(status_in[0] | status_in[14]);
@@ -796,27 +796,30 @@ wire [1:0] IPL_OUT = ~SYSTEM_CDx ? { IPL1,IPL0 } : CD_IPL;
 
 // Because of the SDRAM latency, nDTACK is handled differently for ROM zones
 // If the address is in a ROM zone, PROM_DATA_READY is used to extend the normal nDTACK output by NEO-C1
-wire nDTACK_ADJ = ~&{nSROMOE, nROMOE, nPORTOE, ~CD_EXT_RD, ~CD_TR_RD_FIX, ~CD_TR_RD_SPR} ? ~PROM_DATA_READY | nDTACK
+// POCKET: MVS backup RAM is in CRAM0, a read of it waits as one of a ROM
+wire BK_RD = ~(nSRAMOEL & nSRAMOEU) & SYSTEM_MVS;
+wire nDTACK_ADJ = ~&{nSROMOE, nROMOE, nPORTOE, ~CD_EXT_RD, ~CD_TR_RD_FIX, ~CD_TR_RD_SPR, ~BK_RD} ? ~PROM_DATA_READY | nDTACK
                     : ((CD_EXT_WR | CD_TR_WR_SPR) & ~DMA_RUNNING) ? ~CD_EXT_WR_READY | nDTACK     // POCKET: posted, unless the queue is full
                     : (CD_TR_WR_PCM | CD_TR_WR_FIX) ? ~CD_PCM_DTACK | nDTACK     // POCKET: was ddram_dtack; until it is in the chip
                     : (CD_TR_RD_PCM) ? ~ADPCMA_RD_DTACK | nDTACK
                     : nDTACK;
 
-// POCKET: the UniBIOS's SYSTEM setting always matches CD/CDZ, see cd_bios_model
+// POCKET: the UniBIOS's SYSTEM setting always matches the core's menu, see bios_model
 wire [15:0] cpu_dataout;
-`ifdef NEOGEO_CD
 wire       dbg_bios_unibios;
 wire [15:0] dbg_bios_requested;
-cd_bios_model CD_BIOS_MODEL
+`ifdef NEOGEO_CD
+wire [7:0] bios_model_byte = SYSTEM_CDZ ? 8'd2 : 8'd0;	// CDZ or top loader
+`else
+wire [7:0] bios_model_byte = SYSTEM_MVS ? 8'h80 : 8'h00;	// arcade or console
+`endif
+bios_model BIOS_MODEL
 (
 	.clk(CLK_48M), .nRESET(nRESET),
 	.nAS(nAS), .nUDS(nUDS), .nLDS(nLDS), .M68K_RW(M68K_RW), .M68K_ADDR(M68K_ADDR),
-	.data_in(cpu_dataout), .system_cdz(SYSTEM_CDZ), .data_out(FX68K_DATAOUT),
+	.data_in(cpu_dataout), .model(bios_model_byte), .data_out(FX68K_DATAOUT),
 	.unibios(dbg_bios_unibios), .requested(dbg_bios_requested)
 );
-`else
-assign FX68K_DATAOUT = cpu_dataout;
-`endif
 
 cpu_68k M68KCPU(
 	.CLK(CLK_48M),
@@ -854,29 +857,12 @@ assign M68K_DATA[7:0] = ~CD_TR_RD_FIX ? 8'bzzzz_zzzz : (M68K_ADDR[4] ? PROM_DATA
 
 // POCKET: the mux's port to the SRAM of the CD build
 wire        fx_req, fx_we, fx_ack;
-wire [15:0] fx_word, fx_wdata, fx_rdata;
+wire [16:0] fx_word;
+wire [15:0] fx_wdata, fx_rdata;
 wire  [1:0] fx_be;
 
-`ifndef NEOGEO_CD
-// POCKET: 68K work RAM in the Pocket's SRAM (Task 4), instead of the WRAML/WRAMU block RAMs.
-assign {fx_ack, fx_rdata} = 0;
-
-sram_ctrl WRAM(
-	.clk(CLK_48M),
-	.rst_n(wram_rst_n),
-	.sram_a(sram_a), .sram_dq(sram_dq), .sram_oe_n(sram_oe_n), .sram_we_n(sram_we_n),
-	.sram_ub_n(sram_ub_n), .sram_lb_n(sram_lb_n),
-	.wram_addr(M68K_ADDR[15:1]),
-	.wram_din(FX68K_DATAOUT),   // only the CPU writes here: the resolved bus would add a false 96 MHz path to the pins
-	.wram_dout({WRAMU_OUT, WRAML_OUT}),
-	.nWRL(nWRL), .nWRU(nWRU), .nWWL(nWWL), .nWWU(nWWU),
-	.busy(sram_busy)
-);
-`else
-// POCKET: the CD's work RAM is PROG RAM and WRAML/WRAMU are its Z80's, below. The SRAM holds FIX RAM.
-assign sram_busy = 0;
-
-cd_fix_sram FIXRAM(
+// POCKET: the SRAM holds the CD's FIX RAM, or the cart's S and M1 ROMs (pocket_mem_mux copies those there after a load)
+sram_port SRAM_PORT(
 	.clk(CLK_48M),
 	.req(fx_req), .we(fx_we), .word(fx_word), .be(fx_be), .wdata(fx_wdata), .ack(fx_ack), .rdata(fx_rdata),
 	.sram_a(sram_a), .sram_dq(sram_dq), .sram_oe_n(sram_oe_n), .sram_we_n(sram_we_n),
@@ -884,33 +870,48 @@ cd_fix_sram FIXRAM(
 );
 
 // Neo CD 68k work RAM is in SDRAM so we can use this for Z80 RAM instead.
-// POCKET: PROG RAM is in CRAM0. These are the Z80's alone, without the mux for the 68K's use
+// POCKET: PROG RAM is in CRAM0, so in the CD build these are the Z80's alone. In the cart build they are the 68K's, as on
+// MiSTer, in the blocks the backup RAM left, and read as 0 after a reset, as the SRAM's sweep left them until now.
+`ifdef NEOGEO_CD
+assign WRAM_ADDR  = SDA[15:1];
+assign WRAML_DATA = SDD_OUT;
+assign WRAMU_DATA = SDD_OUT;
+assign WRAML_WREN = ~nSDMWR & ~SDA[0];
+assign WRAMU_WREN = ~nSDMWR &  SDA[0];
+wire [7:0] WRAM_CLEAR = TRASH_ADDR[7:0];
+`else
+assign WRAM_ADDR  = M68K_ADDR[15:1];
+assign {WRAMU_DATA, WRAML_DATA} = FX68K_DATAOUT;
+assign WRAML_WREN = ~nWWL;
+assign WRAMU_WREN = ~nWWU;
+wire [7:0] WRAM_CLEAR = 8'h00;
+`endif
+
 dpram #(15) WRAML(
 	.clock_a(CLK_48M),
-	.address_a(SDA[15:1]),
-	.data_a(SDD_OUT),
-	.wren_a(~nSDMWR & ~SDA[0]),
+	.address_a(WRAM_ADDR),
+	.data_a(WRAML_DATA),
+	.wren_a(WRAML_WREN),
 	.q_a(WRAML_OUT),
 
 	.clock_b(CLK_48M),
 	.address_b(TRASH_ADDR),
-	.data_b(TRASH_ADDR[7:0]),
+	.data_b(WRAM_CLEAR),
 	.wren_b(~nRESET_CORE)
 );
 
 dpram #(15) WRAMU(
 	.clock_a(CLK_48M),
-	.address_a(SDA[15:1]),
-	.data_a(SDD_OUT),
-	.wren_a(~nSDMWR & SDA[0]),
+	.address_a(WRAM_ADDR),
+	.data_a(WRAMU_DATA),
+	.wren_a(WRAMU_WREN),
 	.q_a(WRAMU_OUT),
 
 	.clock_b(CLK_48M),
 	.address_b(TRASH_ADDR),
-	.data_b(TRASH_ADDR[7:0]),
+	.data_b(WRAM_CLEAR),
 	.wren_b(~nRESET_CORE)
 );
-`endif
 
 wire [23:0] P2ROM_ADDR_PVC, P2ROM_ADDR_SMA;
 wire [23:0] P2ROM_ADDR = cart_pchip ? (P2ROM_ADDR_PVC | P2ROM_ADDR_SMA) : {P_BANK, M68K_ADDR[19:1], 1'b0};
@@ -996,24 +997,7 @@ assign M68K_DATA[15:8] = nWRU ? 8'bzzzzzzzz : SYSTEM_CDx ? PROM_DATA[15:8] : WRA
 wire nBWL = nSRAMWEL | nSRAMWEN_G;
 wire nBWU = nSRAMWEU | nSRAMWEN_G;
 
-`ifndef NEOGEO_CD
-backup BACKUP
-(
-	.CLK(CLK_48M),
-	.M68K_ADDR(M68K_ADDR[15:1]),
-	.M68K_DATA(M68K_DATA),
-	.nBWL(nBWL), .nBWU(nBWU),
-	.SRAM_OUT(SRAM_OUT),
-	.clk_sys(clk_sys),
-	.sram_addr(sram_addr),
-	.sram_wr(sram_wr),
-	.sd_buff_dout(sd_buff_dout),
-	.sd_buff_din_sram(sram_buff_dout)
-);
-`else
-assign SRAM_OUT = 0;
-assign sram_buff_dout = 0;
-`endif
+assign SRAM_OUT = PROM_DATA;	// POCKET: in CRAM0, read as a ROM
 
 // Backup RAM is only for MVS
 assign M68K_DATA[7:0] = (nSRAMOEL | ~SYSTEM_MVS) ? 8'bzzzzzzzz : SRAM_OUT[7:0];
@@ -1445,9 +1429,6 @@ wire [7:0] ADPCMB_DATA = (!ADPCMB_MASK) ? 8'h80 : ADPCMB_DOUT;
 `ifndef NEOGEO_READY_COMB
 `define NEOGEO_READY_COMB 0
 `endif
-`ifndef NEOGEO_Z80_WORD_BUF
-`define NEOGEO_Z80_WORD_BUF 0
-`endif
 `ifdef NEOGEO_WAIT_COUNTER
 wire [1:0] dbg_at_req;
 // The cart's ROM zones. The CD build adds PROG RAM and the BIOS's other half: CD_EXT_RD and CD_EXT_WR. The holds
@@ -1455,7 +1436,7 @@ wire [1:0] dbg_at_req;
 `ifdef NEOGEO_CD
 wire dbg_zone = ~&{nSROMOE, nROMOE, nPORTOE} | CD_EXT_RD | CD_EXT_WR;
 `else
-wire dbg_zone = ~&{nSROMOE, nROMOE, nPORTOE};
+wire dbg_zone = ~&{nSROMOE, nROMOE, nPORTOE} | BK_RD;
 `endif
 assign dbg_wait = {dbg_at_req, dbg_zone, nAS, nRESET};
 `ifdef NEOGEO_CD
@@ -1484,7 +1465,7 @@ localparam bit MUX_CD_BUILD = 1;
 `else
 localparam bit MUX_CD_BUILD = 0;
 `endif
-pocket_mem_mux #(.RD_WAIT(`NEOGEO_RD_WAIT), .READY_COMB(`NEOGEO_READY_COMB), .Z80_WORD_BUF(`NEOGEO_Z80_WORD_BUF), .CD_BUILD(MUX_CD_BUILD)) SDRAM_MUX(
+pocket_mem_mux #(.RD_WAIT(`NEOGEO_RD_WAIT), .READY_COMB(`NEOGEO_READY_COMB), .CD_BUILD(MUX_CD_BUILD), .ROM_SRAM(~MUX_CD_BUILD), .M1_CACHE(~MUX_CD_BUILD), .FIX_CACHE(~MUX_CD_BUILD)) SDRAM_MUX(
 	.CLK(CLK_96M),
 	.MEM_INIT(~locked),
 	.nRESET(nRESET),
@@ -1569,6 +1550,10 @@ pocket_mem_mux #(.RD_WAIT(`NEOGEO_RD_WAIT), .READY_COMB(`NEOGEO_READY_COMB), .Z8
 	.m1_ack(z80rd_ack),
 
 	.fx_req(fx_req), .fx_we(fx_we), .fx_word(fx_word), .fx_be(fx_be), .fx_wdata(fx_wdata), .fx_ack(fx_ack), .fx_rdata(fx_rdata),
+
+	.BK_RD(BK_RD), .BK_WR({~nBWU, ~nBWL}),
+	.bk_req(bk_req), .bk_we(bk_we), .bk_addr(sram_addr), .bk_wdata(sd_buff_dout), .bk_ack(bk_ack), .bk_rdata(sram_buff_dout),
+	.ROM_COPY_BUSY(sram_busy),
 
 	.dram_dq(dram_dq), .dram_a(dram_a), .dram_dqm(dram_dqm), .dram_ba(dram_ba), .dram_we_n(dram_we_n),
 	.dram_ras_n(dram_ras_n), .dram_cas_n(dram_cas_n), .dram_cke(dram_cke), .dram_clk(dram_clk),

@@ -5,13 +5,14 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// The UniBIOS keeps the console model it runs as in its SYSTEM setting, the byte $10FE32 (0 top loader, 1 front loader, 2 CDZ),
-// loaded from the memory card at boot and TOPLOAD when the card has none. It drives the tray bit's polarity and other branches
-// of its disc code. With the core's CD/CDZ on and the setting at TOPLOAD, the BIOS reads a closed tray as open and leaves its
-// disc reads (Samurai Shodown RPG's load failed on it). So no user has to set anything, the core replaces whatever is written
-// to that byte with the model CD/CDZ asks for. The UniBIOS writes its magic, $5632, to $10FE30 before the byte; a BIOS that
-// does not is left alone. A consequence: the SYSTEM item in the UniBIOS menu cannot change the model.
-module cd_bios_model (
+// The UniBIOS keeps the console it runs as in its SYSTEM setting, the byte $10FE32, loaded from the memory card or backup RAM at
+// boot. The CD BIOS has 0 top loader, 1 front loader, 2 CDZ; the cartridge BIOS has $00 console (AES) and $80 arcade (MVS).
+// On the CD it drives the tray bit's polarity and other branches of the disc code: with the core's CD/CDZ on and the setting at
+// TOPLOAD, the BIOS reads a closed tray as open and leaves its disc reads (Samurai Shodown RPG's load failed on it). So no user
+// has to set anything, the core replaces whatever is written to that byte with the model its own menu asks for. The UniBIOS
+// writes its magic, $5632, to $10FE30 before the byte; a BIOS that does not is left alone. A consequence: the SYSTEM item in the
+// UniBIOS menu cannot change the model.
+module bios_model (
     input             clk,
     input             nRESET,
     input             nAS,
@@ -20,7 +21,7 @@ module cd_bios_model (
     input             M68K_RW,
     input      [23:1] M68K_ADDR,
     input      [15:0] data_in,      // the 68K's write data
-    input             system_cdz,
+    input       [7:0] model,        // the value of the SYSTEM byte
     output     [15:0] data_out,
     output reg        unibios = 0,
     output reg [15:0] requested = 0 // debug: what the BIOS last tried to write there: SYSTEM above, its region setting below
@@ -40,6 +41,6 @@ always @(posedge clk) begin
     end
 end
 
-assign data_out = (at_setting && unibios) ? {system_cdz ? 8'd2 : 8'd0, data_in[7:0]} : data_in;
+assign data_out = (at_setting && unibios) ? {model, data_in[7:0]} : data_in;
 
 endmodule

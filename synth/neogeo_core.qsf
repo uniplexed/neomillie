@@ -1,4 +1,4 @@
-# Neo Geo cartridge core for the Analogue Pocket: what neogeo, neogeo8 and neogeo6 share.
+# Neo Geo cartridge core for the Analogue Pocket: what neogeo and neogeo_debug share.
 
 source ../pocket_common.qsf
 
@@ -25,6 +25,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/audio_i2s.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/pocket_mem_mux.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/sdram_ctrl.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/cram_ctrl.sv
-set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/sram_ctrl.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/sram_port.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/bios_model.sv
 set_global_assignment -name QIP_FILE ../../rtl/pocket/pll_pocket.qip
 set_global_assignment -name SDC_FILE ../neogeo/pocket.sdc

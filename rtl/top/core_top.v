@@ -342,6 +342,12 @@ end
     wire            target_dataslot_ack;
     wire            target_dataslot_done;
     wire    [2:0]   target_dataslot_err;
+    wire            rs_busy, rs_write, rs_host_free;    // apf_loader: Reset Core writes the saves
+`ifndef NEOGEO_CD
+    assign          rs_host_free = ~target_dataslot_ack;
+`endif
+    wire    [15:0]  rs_slot;
+    wire    [31:0]  rs_bridge, rs_length;
 `ifdef NEOGEO_CD
     // cd_host owns the target commands (rtl/cd/cd_host.sv), the wait counter's slot write included
     wire            target_dataslot_read, target_dataslot_write, target_dataslot_getfile, target_dataslot_openfile;
@@ -420,15 +426,15 @@ core_bridge_cmd icb (
 
 `ifdef NEOGEO_CD
     .target_dataslot_read       ( target_dataslot_read ),
-    .target_dataslot_write      ( target_dataslot_write ),
+    .target_dataslot_write      ( target_dataslot_write | rs_write ),
     .target_dataslot_getfile    ( target_dataslot_getfile ),
     .target_dataslot_openfile   ( target_dataslot_openfile ),
 `else
     .target_dataslot_read       ( 1'b0 ),
 `ifdef NEOGEO_WAIT_COUNTER
-    .target_dataslot_write      ( wait_save_now ),
+    .target_dataslot_write      ( wait_save_now | rs_write ),
 `else
-    .target_dataslot_write      ( 1'b0 ),
+    .target_dataslot_write      ( rs_write ),
 `endif
     .target_dataslot_getfile    ( 1'b0 ),
     .target_dataslot_openfile   ( 1'b0 ),
@@ -439,20 +445,20 @@ core_bridge_cmd icb (
     .target_dataslot_err        ( target_dataslot_err ),
 
 `ifdef NEOGEO_CD
-    .target_dataslot_id         ( target_dataslot_id ),
-    .target_dataslot_slotoffset ( target_dataslot_slotoffset ),
-    .target_dataslot_bridgeaddr ( target_dataslot_bridgeaddr ),
-    .target_dataslot_length     ( target_dataslot_length ),
+    .target_dataslot_id         ( rs_busy ? rs_slot : target_dataslot_id ),
+    .target_dataslot_slotoffset ( rs_busy ? 32'd0 : target_dataslot_slotoffset ),
+    .target_dataslot_bridgeaddr ( rs_busy ? rs_bridge : target_dataslot_bridgeaddr ),
+    .target_dataslot_length     ( rs_busy ? rs_length : target_dataslot_length ),
 `elsif NEOGEO_WAIT_COUNTER
-    .target_dataslot_id         ( 16'h0103 ),
+    .target_dataslot_id         ( rs_busy ? rs_slot : 16'h0103 ),
     .target_dataslot_slotoffset ( 32'd0 ),
-    .target_dataslot_bridgeaddr ( 32'h8000_0000 ),
-    .target_dataslot_length     ( 32'd256 ),
+    .target_dataslot_bridgeaddr ( rs_busy ? rs_bridge : 32'h8000_0000 ),
+    .target_dataslot_length     ( rs_busy ? rs_length : 32'd8192 ),    // wait_counter.sv, layout 3
 `else
-    .target_dataslot_id         ( 16'd0 ),
+    .target_dataslot_id         ( rs_slot ),
     .target_dataslot_slotoffset ( 32'd0 ),
-    .target_dataslot_bridgeaddr ( 32'd0 ),
-    .target_dataslot_length     ( 32'd0 ),
+    .target_dataslot_bridgeaddr ( rs_bridge ),
+    .target_dataslot_length     ( rs_length ),
 `endif
 
     .target_buffer_param_struct ( target_buffer_param_struct ),
@@ -482,7 +488,7 @@ pll_pocket pll (
 
 // The loader: slots, settings, saves, controls and RTC
 
-    wire            ioctl_wr, ioctl_download, sram_wr, memcard_wr, apf_core_reset, width320, prom1_conflict;
+    wire            ioctl_wr, ioctl_download, bk_req, bk_we, bk_ack, memcard_wr, apf_core_reset, width320, prom1_conflict;
     wire    [26:0]  ioctl_addr;
     wire    [15:0]  ioctl_dout, save_din, joystick_0, joystick_1, joystick_2, joystick_3;
     wire    [7:0]   ioctl_idx;
@@ -521,8 +527,10 @@ apf_loader #(.RESET_HOLD_CLKS(RESET_HOLD_CLKS)) loader (
     .joystick_0(joystick_0), .joystick_1(joystick_1), .joystick_2(joystick_2), .joystick_3(joystick_3),
     .status(status), .cfg(cfg), .rtc(rtc), .v2_offset(v2_offset), .v2rom_mask(v2rom_mask),
     .width320(width320), .video_slot(video_slot), .mvs(mvs),
+    .rs_busy(rs_busy), .rs_write(rs_write), .rs_slot(rs_slot), .rs_bridge(rs_bridge), .rs_length(rs_length),
+    .rs_host_free(rs_host_free), .rs_host_done(target_dataslot_done),
     .apf_core_reset(apf_core_reset), .prom1_conflict(prom1_conflict),
-    .sram_addr(sram_addr), .sram_wr(sram_wr), .memcard_addr(memcard_addr), .memcard_wr(memcard_wr),
+    .sram_addr(sram_addr), .bk_req(bk_req), .bk_we(bk_we), .bk_ack(bk_ack), .memcard_addr(memcard_addr), .memcard_wr(memcard_wr),
     .sd_buff_dout(save_din), .sram_buff_dout(sram_buff_dout), .card_buff_dout(card_buff_dout)
 `ifdef NEOGEO_CD
     , .disc_size(disc_size), .cd_mount_req(cd_mount_req)
@@ -564,7 +572,7 @@ cd_host cd_host (
     .bridge_addr(bridge_addr), .bridge_wr(bridge_wr), .bridge_wr_data(bridge_wr_data),
     .bridge_rd(bridge_rd), .bridge_rd_data(cd_host_rd_data),
     .mr_req(mr_req), .mr_kind(mr_kind), .mr_slot(mr_slot), .mr_offset(mr_offset), .mr_len(mr_len), .mr_bank_slot(mr_bank_slot),
-    .mr_done(mr_done), .mr_err(mr_err),
+    .mr_done(mr_done), .mr_err(mr_err), .rs_hold(rs_busy), .rs_free(rs_host_free),
     .fr_req(fr_req), .fr_slot(fr_slot), .fr_offset(fr_offset), .fr_bank_slot(fr_bank_slot), .fr_done(fr_done), .fr_err(fr_err),
 `ifdef NEOGEO_WAIT_COUNTER
     .ws_req(wait_save_now), .ws_done(wait_save_done), .ws_err(wait_save_err),
@@ -618,18 +626,16 @@ assign bridge_rd_data = bridge_addr[31:24] == 8'hF8 ? cmd_bridge_rd_data : pocke
 `ifndef NEOGEO_RD_WAIT
 `define NEOGEO_RD_WAIT 8
 `endif
-// The file's layout number: how the owner codes read (rtl/test/wait_counter.sv, tools/check_wait_save.py)
-`ifdef NEOGEO_CD
-`define WAIT_LAYOUT 3
-`else
-`define WAIT_LAYOUT 1
-`endif
-wait_counter #(.RD_WAIT(`NEOGEO_RD_WAIT), .LAYOUT(`WAIT_LAYOUT)) wait_ctr (
+wait_counter #(.RD_WAIT(`NEOGEO_RD_WAIT)) wait_ctr (
     .clk_48m(clk_48m), .nRESET(dbg_wait[0]), .nAS(dbg_wait[1]), .rom_zone(dbg_wait[2]), .at_req(dbg_wait[4:3]),
     .vblank(core_vblank), .c1_wait(cfg[30:28]),
     .clk_74a(clk_74a), .bridge_addr(bridge_addr), .bridge_rd(bridge_rd), .bridge_rd_data(wait_rd_data),
     .bridge_wr(bridge_wr), .bridge_wr_data(bridge_wr_data),
-    .run(reset_n & dataslot_allcomplete), .save_now(wait_save_now),
+    .run(reset_n & dataslot_allcomplete
+`ifndef NEOGEO_CD
+         & ~rs_busy                     // cd_host orders the CD's writes; here the two share the command's port
+`endif
+    ), .save_now(wait_save_now),
 `ifdef NEOGEO_CD
     .save_done(wait_save_done), .save_err(wait_save_err),
     .cdd(dbg_cdd), .disc_bin_size(disc_bin_size), .disc_reason(disc_reason),
@@ -648,7 +654,7 @@ neogeo_pocket neogeo (
     .ioctl_download(ioctl_download), .ioctl_idx(ioctl_idx),
     .joystick_0(joystick_0), .joystick_1(joystick_1), .joystick_2(joystick_2), .joystick_3(joystick_3),
     .status_in(status), .cfg(cfg), .rtc(rtc), .v2_offset(v2_offset), .v2rom_mask(v2rom_mask),
-    .sram_addr(sram_addr), .sram_wr(sram_wr), .memcard_addr(memcard_addr), .memcard_wr(memcard_wr),
+    .sram_addr(sram_addr), .bk_req(bk_req), .bk_we(bk_we), .bk_ack(bk_ack), .memcard_addr(memcard_addr), .memcard_wr(memcard_wr),
     .sd_buff_dout(save_din), .sram_buff_dout(sram_buff_dout), .card_buff_dout(card_buff_dout),
     .snd_left(snd_left), .snd_right(snd_right),
     .ce_pix(ce_pix), .r(r), .g(g), .b(b), .hs(hs), .vs(vs), .hblank(core_hblank), .vblank(core_vblank),

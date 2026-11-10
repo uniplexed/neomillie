@@ -14,7 +14,7 @@
                 "mask": "0xFFFFFFFE"
             },
 			{
-                "name": "MVS/AES",
+                "name": "AES/MVS",
                 "id": 4,
                 "type": "check",
 				"enabled": true,

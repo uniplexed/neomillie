@@ -1,6 +1,0 @@
-# The memory self-test with RD_WAIT 6, the sample point of Mazamars312's psram_controller.v. It violates
-# tAA by more than RD_WAIT 7 on paper: whether that fails on real chips is what this core measures.
-
-source ../memtest/memtest.qsf
-
-set_global_assignment -name VERILOG_MACRO "MEMTEST_RD_WAIT=6"

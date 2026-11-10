@@ -7,7 +7,7 @@
 
 """Read the save file of the wait counter: python tools/check_wait_save.py wait.sav
 
-The debug builds neogeo_wait, neogeo8_wait, neogeo8_zbuf and neogeocd_wait write it (rtl/test/wait_counter.sv). The CD
+The debug builds neogeo_debug and neogeocd_debug write it (rtl/test/wait_counter.sv). The CD
 core from 0.5.1 writes waits.sav, 8 records of layout 3 below, one per run, so one file compares several runs. Prints
 what the memory cost the 68K, split by what CRAM0 was doing when each read's request arrived. Exit code 0 when
 the file is good, whatever the numbers. --selftest runs the checks on made-up files.

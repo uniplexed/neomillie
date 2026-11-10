@@ -27,7 +27,7 @@
 // test_wait_counter (with NEOGEO_WAIT_COUNTER) the debug counter against this bench, and its save file
 //
 // All along: every read on the 68K bus latches what the memory holds, and each class of cycle is
-// measured against the budgets of sram_ctrl and the mux. The chip models check their own timing.
+// measured against the budgets of the mux. The chip models check their own timing.
 `timescale 1ns/1ps
 module tb_top;
     localparam real PERIOD_74 = 13.468;
@@ -109,8 +109,8 @@ module tb_top;
         .oe_n(c1_oe), .we_n(c1_we), .ub_n(c1_ub), .lb_n(c1_lb), .fpga_dq_oe(dut.neogeo.SDRAM_MUX.u_cram1.dq_oe)
     );
     sram_model #(.POLL_NS(2.0)) mem_s (
-        .a(s_a), .dq(s_dq), .oe_n(s_oe), .we_n(s_we), .ub_n(s_ub), .lb_n(s_lb), .fpga_dq_oe(dut.neogeo.WRAM.dq_oe),
-        .cut_write_ok(dut.neogeo.WRAM.run & ~dut.neogeo.WRAM.clearing)
+        .a(s_a), .dq(s_dq), .oe_n(s_oe), .we_n(s_we), .ub_n(s_ub), .lb_n(s_lb), .fpga_dq_oe(dut.neogeo.SRAM_PORT.dq_oe),
+        .cut_write_ok(1'b0)
     );
 
     // ---- Core signals the monitors watch ----
@@ -165,13 +165,19 @@ module tb_top;
     longint swept_words = 0;
     always @(posedge clk48) begin
         nreset_d <= nRESET;
-        // sram_ctrl owns the pins until busy falls. A reset reaches nRESET a clock after the sweep has
-        // started, the CPU's last clock; what must not happen is leaving reset before the sweep ends.
-        if (nRESET && !nreset_d && dut.neogeo.sram_busy) fail("the core left reset while the work RAM sweep was running");
+        // The copy of S and M1 to the SRAM must be over when the core leaves reset, and the work RAM cleared
+        if (nRESET && !nreset_d && dut.neogeo.sram_busy) fail("the core left reset while the ROM copy was running");
         if (nRESET && !nreset_d) begin
             automatic int bad = 0;
-            for (int i = 0; i < 32768; i++) if (mem_s.mem[i] != 0) bad++;
+            for (int i = 0; i < 32768; i++)
+                if (dut.neogeo.WRAML.altsyncram_component.mem[i] != 0 || dut.neogeo.WRAMU.altsyncram_component.mem[i] != 0) bad++;
             check(bad == 0, $sformatf("%0d work RAM words not zero when the core left reset", bad));
+            bad = 0;
+            for (int i = 0; i < 'h10000; i++) begin
+                automatic bit [22:0] k = 23'h600000 + 23'(i);     // MAP_SROM, in words
+                if (mem_s.mem[i] !== (mem_c0.mem.exists(k) ? mem_c0.mem[k] : 16'h0000)) bad++;
+            end
+            check(bad == 0, $sformatf("%0d S ROM words differ between the SRAM and CRAM0 when the core left reset", bad));
             releases++;
         end
     end
@@ -321,7 +327,8 @@ module tb_top;
                     end
                     // What the CPU took from the work RAM must be what the chip holds now
                     if (k == C_WRAM_R && c_latch >= 0) begin
-                        automatic logic [15:0] want = mem_s.mem[{2'b00, c_addr[15:1]}];
+                        automatic logic [15:0] want = {dut.neogeo.WRAMU.altsyncram_component.mem[c_addr[15:1]],
+                                                       dut.neogeo.WRAML.altsyncram_component.mem[c_addr[15:1]]};
                         if ((c_rl && c_data[7:0] != want[7:0]) || (c_ru && c_data[15:8] != want[15:8]))
                             fail($sformatf("work RAM read at %06x latched %04x, the chip holds %04x", {c_addr, 1'b0}, c_data, want));
                     end

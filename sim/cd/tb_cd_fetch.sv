@@ -93,7 +93,7 @@ module tb_cd_fetch;
         .target_buffer_param_struct(param_struct), .target_buffer_resp_struct(resp_struct),
         .bridge_addr, .bridge_wr, .bridge_wr_data, .bridge_rd, .bridge_rd_data(host_rd_data),
         .mr_req(1'b0), .mr_kind(2'd0), .mr_slot(16'd0), .mr_offset(32'd0), .mr_len(32'd0), .mr_bank_slot(2'd0),
-        .mr_done(), .mr_err(),
+        .mr_done(), .mr_err(), .rs_hold(1'b0), .rs_free(),
         .fr_req, .fr_slot, .fr_offset, .fr_bank_slot, .fr_done, .fr_err,
         .ws_req(1'b0), .ws_done(), .ws_err(),
         .bank_rd_addr, .bank_rd_q, .bank_rd_addr_74(12'd0), .bank_rd_q_74(),

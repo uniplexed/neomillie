@@ -80,6 +80,9 @@ module cd_host (
     input       [1:0] mr_bank_slot,
     output reg        mr_done = 0,
     output reg  [2:0] mr_err = 0,
+    // apf_loader's save on Reset Core owns the host's commands while rs_hold, from the first clock rs_free is seen with it
+    input             rs_hold,
+    output            rs_free,
     // fetch client, CLK_48M
     input             fr_req,
     input      [15:0] fr_slot,
@@ -141,6 +144,8 @@ reg   [1:0] kind = K_READ;
 wire mount_pending = mr_req && !mr_done;
 wire mount_open    = mount_pending && mr_kind == K_OPENFILE;
 
+assign rs_free = state == S_IDLE;
+
 function automatic [11:0] slot_base(input [1:0] slot);     // slot * 588
     case (slot)
         2'd0: return 12'd0;
@@ -164,7 +169,8 @@ always @(posedge clk_74a) begin
 
     case (state)
         S_IDLE:
-            if (fr_pending && !mount_open) begin
+            if (rs_hold) state <= S_IDLE;
+            else if (fr_pending && !mount_open) begin
                 fr_taken                   <= fr_req_s[1];     // the done answers this request, not a later toggle
                 client                     <= C_FETCH;
                 kind                       <= K_READ;

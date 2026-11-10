@@ -7,8 +7,6 @@
 4
 # As every build of the core
 +define+NEOGEO_READY_COMB=1
-# As the released core
-+define+NEOGEO_Z80_WORD_BUF=1
 +incdir+rtl/pocket
 sim/models/altera_stubs.sv
 sim/models/sdram_model.sv
@@ -28,7 +26,8 @@ rtl/pocket/audio_i2s.sv
 rtl/pocket/pocket_mem_mux.sv
 rtl/pocket/sdram_ctrl.sv
 rtl/pocket/cram_ctrl.sv
-rtl/pocket/sram_ctrl.sv
+rtl/pocket/sram_port.sv
+rtl/pocket/bios_model.sv
 rtl/test/wait_counter.sv
 rtl/pocket/pll_mvs_cfg.sv
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt10.v
@@ -136,7 +135,6 @@ upstream/NeoGeo_MiSTer/rtl/cells/fdm.v
 upstream/NeoGeo_MiSTer/rtl/cells/C43.v
 upstream/NeoGeo_MiSTer/rtl/cells/bd3.v
 upstream/NeoGeo_MiSTer/rtl/mem/memcard.v
-upstream/NeoGeo_MiSTer/rtl/mem/backup.v
 upstream/NeoGeo_MiSTer/rtl/mem/dpram.v
 upstream/NeoGeo_MiSTer/rtl/cpu/FX68K/fx68k.sv
 upstream/NeoGeo_MiSTer/rtl/cpu/FX68K/fx68kAlu.sv

@@ -5,7 +5,7 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-"""SD card package of the core: python tools/package.py neogeo|neogeo8|neogeo6|neogeo_wait|neogeo8_wait|neogeo8_zbuf|neogeocd|neogeocd_wait|neogeocd7|neogeocd6 VERSION
+"""SD card package of the core: python tools/package.py neogeo|neogeo_debug|neogeocd|neogeocd_debug VERSION
 
 Writes dist/uniplexed.NeoMillie_VERSION.zip from synth/neogeo/output_files/neogeo.rbf and pocket/neogeo:
 the bit-reversed bitstream and JSON files, the Platform entry and its image (tools/make_platform_image.py), and the
@@ -30,15 +30,9 @@ from make_platform_image import image_bytes  # noqa: E402
 # revision: (core name, description or None, JSON directory under pocket, platform)
 REVISIONS = {
     "neogeo": ("NeoMillie", None, "neogeo", "ng"),
-    "neogeo8": ("NeoGeo8", "Neo Geo cartridge core, test build with RD_WAIT 8", "neogeo", "ng"),
-    "neogeo6": ("NeoGeo6", "Neo Geo cartridge core, test build with RD_WAIT 6", "neogeo", "ng"),
-    "neogeo_wait": ("NeoGeoWait", "Neo Geo cart core, debug build, RD_WAIT 7, 68K wait counter", "neogeo", "ng"),
-    "neogeo8_wait": ("NeoGeo8Wait", "Neo Geo cart core, debug build, RD_WAIT 8, 68K wait counter", "neogeo", "ng"),
-    "neogeo8_zbuf": ("NeoGeoZ80Buf", "Neo Geo cart core, debug, RD_WAIT 8, Z80 buffer, wait counter", "neogeo", "ng"),
+    "neogeo_debug": ("NeoMillieDebug", "Neo Geo cart core, debug build with the 68K wait counter", "neogeo", "ng"),
     "neogeocd": ("NeoMillieCD", None, "neogeocd", "ngcd"),
-    "neogeocd_wait": ("NeoGeoCDWait", "Neo Geo CD core, debug build with the 68K wait counter", "neogeocd", "ngcd"),
-    "neogeocd7": ("NeoGeoCD7", "Neo Geo CD core, test build with RD_WAIT 7", "neogeocd", "ngcd"),
-    "neogeocd6": ("NeoGeoCD6", "Neo Geo CD core, test build with RD_WAIT 6", "neogeocd", "ngcd"),
+    "neogeocd_debug": ("NeoMillieCDDebug", "Neo Geo CD core, debug build with the 68K wait counter", "neogeocd", "ngcd"),
 }
 # As memory test's results slot, which ran on the Pocket: parameters 34 puts the file in the core's Saves folder
 WAIT_SLOT = {"name": "Wait counter", "id": "0x103", "required": False, "parameters": 34, "nonvolatile": True,
@@ -88,8 +82,8 @@ def members(rev, version):
         wait_counter = "NEOGEO_WAIT_COUNTER" in (ROOT / f"synth/{rev}/{rev}.qsf").read_text()
         if p.name == "data.json" and wait_counter:
             j = json.loads(data)
-            # The CD core's file is 8 records of 512 bytes, as rtl/cd/cd_host.sv's slot write and rtl/pocket/apf_loader.sv's table word. A new name: the host keeps an old file's size
-            j["data"]["data_slots"].append(WAIT_SLOT if platform == "ng" else {**WAIT_SLOT, "size_maximum": 8192, "filename": "waitt.sav"})
+            # The file is 8 records of 512 bytes, as the core's slot write and rtl/pocket/apf_loader.sv's table word. A new name: the host keeps an old file's size
+            j["data"]["data_slots"].append({**WAIT_SLOT, "size_maximum": 8192, "filename": "waitt.sav"})
             data = json.dumps(j, indent=4)
         if p.name == "interact.json" and platform == "ngcd" and not wait_counter:
             # Debug items. Without the counter the speed follows CD/CDZ (rtl/top/neogeo_pocket.sv), and the lid stays closed

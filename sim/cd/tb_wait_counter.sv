@@ -6,8 +6,8 @@
 // (at your option) any later version.
 
 // rtl/test/wait_counter.sv's layout 3 on its own, with made-up feeds, in seconds: sim/topcd holds the same words against
-// the real core, in an hour. Every word of the file by its number, the rings' order past their depth, and layout 1,
-// the cartridge's, as it was. Writes wait_l3.sav for tools/check_wait_save.py.
+// the real core, in an hour. Every word of the file by its number, the rings' order past their depth.
+// Writes wait_l3.sav for tools/check_wait_save.py.
 `timescale 1ns/1ps
 module tb_wait_counter;
     localparam int FILE_WORDS = 128;
@@ -23,23 +23,16 @@ module tb_wait_counter;
     logic [36:0]  sect = 0;
     logic [0:9][31:0]  fetch = 0;
     logic [0:11][31:0] dma = 0;
-    wire  [31:0]  rd3, rd1;
+    wire  [31:0]  rd3;
 
-    wait_counter #(.LAYOUT(3)) dut (
+    wait_counter dut (
         .clk_48m(clk48), .nRESET, .nAS, .rom_zone(1'b0), .at_req(2'd1), .vblank, .c1_wait(3'd0),
         .clk_74a(clk74), .bridge_addr, .bridge_rd, .bridge_rd_data(rd3), .bridge_wr(1'b0), .bridge_wr_data(32'd0), .run(1'b0), .save_now(),
         .save_done(1'b0), .save_err(3'd0),
         .cdd, .disc_bin_size(32'd1234), .disc_reason(4'd1), .cd2, .fetch, .dma, .sect, .dmab(49'd0), .bus68(18'd0), .dreq(26'd0)
     );
 
-    wait_counter #(.LAYOUT(1)) cart (
-        .clk_48m(clk48), .nRESET, .nAS, .rom_zone(1'b0), .at_req(2'd1), .vblank, .c1_wait(3'd0),
-        .clk_74a(clk74), .bridge_addr, .bridge_rd, .bridge_rd_data(rd1), .bridge_wr(1'b0), .bridge_wr_data(32'd0), .run(1'b0), .save_now(),
-        .save_done(1'b0), .save_err(3'd0),
-        .cdd(114'd0), .disc_bin_size(32'd0), .disc_reason(4'd0), .cd2(54'd0), .fetch(320'd0), .dma(384'd0), .sect(37'd0), .dmab(49'd0), .bus68(18'd0), .dreq(26'd0)
-    );
-
-    // The same layout on its own, for the runs: a file the host loads, a record per run, a save as a reset starts
+    // A second one, for the runs: a file the host loads, a record per run, a save as a reset starts
     logic         r_nRESET = 0, r_vblank = 0, r_wr = 0, r_rd = 0, r_run = 0;
     logic [31:0]  r_addr = 32'h8000_0000, r_wdata = 0;
     wire  [31:0]  r_q;
@@ -47,7 +40,7 @@ module tb_wait_counter;
     int           r_saves = 0;
     always @(posedge clk74) if (r_save) r_saves++;
 
-    wait_counter #(.LAYOUT(3)) runs (
+    wait_counter runs (
         .clk_48m(clk48), .nRESET(r_nRESET), .nAS(1'b1), .rom_zone(1'b0), .at_req(2'd1), .vblank(r_vblank), .c1_wait(3'd0),
         .clk_74a(clk74), .bridge_addr(r_addr), .bridge_rd(r_rd), .bridge_rd_data(r_q),
         .bridge_wr(r_wr), .bridge_wr_data(r_wdata), .run(r_run), .save_now(r_save),
@@ -65,7 +58,7 @@ module tb_wait_counter;
     logic  [32:0] e_info = 0;
     logic  [25:0] e_dreq = 0;
     logic [113:0] e_cdd = 0;
-    wait_counter #(.LAYOUT(3)) ear (
+    wait_counter ear (
         .clk_48m(clk48), .nRESET(e_nRESET), .nAS(e_nAS), .rom_zone(1'b0), .at_req(2'd1), .vblank(e_vblank), .c1_wait(3'd0),
         .clk_74a(clk74), .bridge_addr(32'h8000_0000), .bridge_rd(1'b0), .bridge_rd_data(), .bridge_wr(1'b0), .bridge_wr_data(32'd0),
         .run(1'b0), .save_now(), .save_done(1'b0), .save_err(3'd0),
@@ -110,15 +103,16 @@ module tb_wait_counter;
     endtask
 
     // The UniBIOS's SYSTEM setting replaced by the model CD/CDZ asks for
-    logic         y_nRESET = 0, y_nAS = 1, y_nUDS = 1, y_nLDS = 1, y_rw = 1, y_cdz = 1;
+    logic         y_nRESET = 0, y_nAS = 1, y_nUDS = 1, y_nLDS = 1, y_rw = 1;
+    logic  [7:0]  y_model = 8'd2;
     logic [23:1]  y_addr = 0;
     logic [15:0]  y_data = 0;
     wire  [15:0]  y_out;
     wire          y_unibios;
     wire  [15:0]  y_requested;
-    cd_bios_model model (.clk(clk48), .nRESET(y_nRESET), .nAS(y_nAS), .nUDS(y_nUDS), .nLDS(y_nLDS), .M68K_RW(y_rw),
-                         .M68K_ADDR(y_addr), .data_in(y_data), .system_cdz(y_cdz), .data_out(y_out),
-                         .unibios(y_unibios), .requested(y_requested));
+    bios_model model (.clk(clk48), .nRESET(y_nRESET), .nAS(y_nAS), .nUDS(y_nUDS), .nLDS(y_nLDS), .M68K_RW(y_rw),
+                      .M68K_ADDR(y_addr), .data_in(y_data), .model(y_model), .data_out(y_out),
+                      .unibios(y_unibios), .requested(y_requested));
 
     // A write cycle as the 68K makes it: the address first, then the strobes. Returns what the bus carried under the strobes.
     task automatic y_write(input logic [23:0] byte_addr, input logic [15:0] data, input bit upper, input bit lower,
@@ -141,7 +135,7 @@ module tb_wait_counter;
 
     task automatic test_bios_model();
         logic [15:0] seen;
-        y_cdz = 1;
+        y_model = 8'd2;
         y_nRESET = 1;
         tick(2);
         y_write(24'h10FE32, 16'h0002, 1, 1, seen);
@@ -157,9 +151,16 @@ module tb_wait_counter;
         check(seen[15:8] == 8'd2 && y_requested[15:8] == 8'd1, "a byte write of FRONTLOADER: not stored as CDZ");
         y_write(24'h10FE34, 16'h0104, 1, 1, seen);
         check(seen == 16'h0104, "the word after the setting was changed");
-        y_cdz = 0;
+        y_model = 8'd0;
         y_write(24'h10FE32, 16'h0203, 1, 1, seen);
         check(seen == 16'h0003, "CD/CDZ off, CDZ written: not stored as TOPLOAD");
+        // The cartridge BIOS: $80 is arcade, MVS
+        y_model = 8'h80;
+        y_write(24'h10FE32, 16'h0002, 1, 1, seen);
+        check(seen == 16'h8002, "MVS, console written: not stored as arcade, or the region byte moved");
+        y_model = 8'h00;
+        y_write(24'h10FE32, 16'h8002, 1, 1, seen);
+        check(seen == 16'h0002, "AES, arcade written: not stored as console");
         y_nRESET = 0; tick(2);
         y_nRESET = 1; tick;
         check(!y_unibios, "a reset did not forget the BIOS");
@@ -250,16 +251,16 @@ module tb_wait_counter;
         tick(3);
     endtask
 
-    task automatic read_file(input bit is_cart, output logic [31:0] w [FILE_WORDS]);
-        for (int i = 0; i < (is_cart ? 64 : FILE_WORDS); i++) begin
+    task automatic read_file(output logic [31:0] w [FILE_WORDS]);
+        for (int i = 0; i < FILE_WORDS; i++) begin
             @(posedge clk74);
-            #1 bridge_addr = 32'h8000_0000 + 32'((is_cart ? 0 : dut.run_no[2:0] * 512) + i * 4);
+            #1 bridge_addr = 32'h8000_0000 + 32'(dut.run_no[2:0] * 512 + i * 4);
             repeat (3) @(posedge clk74);
             #1 bridge_rd = 1;
             @(posedge clk74);
             #1 bridge_rd = 0;
             @(posedge clk74);
-            #1 w[i] = is_cart ? rd1 : rd3;
+            #1 w[i] = rd3;
         end
     endtask
 
@@ -368,7 +369,7 @@ module tb_wait_counter;
         tick(2);
         e_nRESET = 1;
         tick(4);
-        check(ear.g_cd.tl_on && ear.g_cd.tl_sel, $sformatf("timeline on %0d, setting %0d", ear.g_cd.tl_on, ear.g_cd.tl_sel));
+        check(ear.tl_on && ear.tl_sel, $sformatf("timeline on %0d, setting %0d", ear.tl_on, ear.tl_sel));
         e_cdd[39:0] = 40'hD071200003;           // PLAY to 00:02:17: entry 1
         e_cd2[7] = 1; tick; e_cd2[7] = 0; tick(4);
         e_cdd[39:0] = 40'hA000000000;           // IDLE: left out
@@ -408,15 +409,15 @@ module tb_wait_counter;
             end
         end
         tick(6);
-        check(ear.g_cd.tl_done == 2'b10 && !ear.g_cd.tl_on, $sformatf("done %b, on %0d", ear.g_cd.tl_done, ear.g_cd.tl_on));
+        check(ear.tl_done == 2'b10 && !ear.tl_on, $sformatf("done %b, on %0d", ear.tl_done, ear.tl_on));
         check(ear.tl[{1'b1, 9'd0}] == {16'h544C, 7'd0, 1'b0, 8'd104}, $sformatf("entry 0: %08x", ear.tl[{1'b1, 9'd0}]));
         check(ear.tl[{1'b1, 9'd1}] == ear.run_no, $sformatf("the run in entry 0: %0d", ear.tl[{1'b1, 9'd1}]));
         check(ear.tl[{1'b1, 8'd103, 1'b1}] == 32'(2000 + 94), $sformatf("the last entry: %0d", ear.tl[{1'b1, 8'd103, 1'b1}]));
         // A reset with the same setting keeps it; with the other it records in the other half
         e_nRESET = 0; tick(4); e_nRESET = 1; tick(4);
-        check(!ear.g_cd.tl_on && ear.tl[{1'b1, 9'd0}] != 0, "a Reset Core overwrote the stopped timeline");
+        check(!ear.tl_on && ear.tl[{1'b1, 9'd0}] != 0, "a Reset Core overwrote the stopped timeline");
         e_nRESET = 0; e_cd2[0] = 0; tick(4); e_nRESET = 1; tick(4);
-        check(ear.g_cd.tl_on && !ear.g_cd.tl_sel, "no timeline for the other setting");
+        check(ear.tl_on && !ear.tl_sel, "no timeline for the other setting");
         e_cdd[39:0] = 40'hD071200003;
         e_cd2[7] = 1; tick; e_cd2[7] = 0; tick(4);
         check(ear.tl[{1'b0, 8'd1, 1'b1}] == 32'h0712_0003, $sformatf("the other half's first entry: %08x", ear.tl[{1'b0, 8'd1, 1'b1}]));
@@ -430,8 +431,8 @@ module tb_wait_counter;
         end
         // Late STAT3 reads: sect[33] toggles
         repeat (3) begin e_sect33 = ~e_sect33; tick(3); end
-        check(ear.g_cd.n_late == 16'd3, $sformatf("%0d late STAT3 reads, want 3", ear.g_cd.n_late));
-        read_file(0, w);
+        check(ear.n_late == 16'd3, $sformatf("%0d late STAT3 reads, want 3", ear.n_late));
+        read_file(w);
         check(w[0] == 32'h4E47_5754, $sformatf("magic %08x", w[0]));
         check(w[1][15:0] == 16'd3, $sformatf("layout %0d", w[1][15:0]));
         check(w[2] == 32'(frames_seen) && w[22] == w[2], $sformatf("frames %0d %0d, the bench %0d", w[2], w[22], frames_seen));
@@ -480,7 +481,7 @@ module tb_wait_counter;
             frame();
         end
         tick(4);
-        read_file(0, w);
+        read_file(w);
         for (int k = 0; k < 4; k++) begin
             automatic int f = 4 - k;
             automatic logic [31:0] want = {f == 2, 8'((300 * (f + 1)) >> 8), 23'h200000 + 23'(f)};
@@ -493,7 +494,7 @@ module tb_wait_counter;
         nRESET = 0;
         tick(3);
         frame();
-        read_file(0, w);
+        read_file(w);
         check(w[32][7] == 1'b0, "a frame in reset reached the record");
         check(w[34][22:0] == 23'h200004, $sformatf("a frame in reset took a sample: %06x", w[34][22:0]));
         nRESET = 1;
@@ -569,13 +570,6 @@ module tb_wait_counter;
             repeat (8) @(posedge clk74);
             check(r_saves == saves_before, "a save asked with the core stopped");
         end
-
-        // ---- Layout 1, the cartridge's file as it was: the pattern at 32-63 ----
-        frame();
-        read_file(1, w);
-        check(w[1][15:0] == 16'd1, $sformatf("cart: layout %0d", w[1][15:0]));
-        for (int i = 32; i < 64; i++) check(w[i] == (32'h5A00_0000 | 32'(i)), $sformatf("cart: word %0d is %08x", i, w[i]));
-        check(w[2] == w[22] && w[2] != 0, "cart: frames");
 
         if (errors != 0) $fatal(1, "%0d failures", errors);
         $display("tb_wait_counter: passed");

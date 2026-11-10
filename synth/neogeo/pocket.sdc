@@ -73,36 +73,20 @@ set_output_delay -clock $clk_96 -min -3.0 $cram_out
 set_input_delay  -clock $clk_96 -max  8.5 $cram_in
 set_input_delay  -clock $clk_96 -min  3.0 $cram_in
 
-# SRAM (Task 4). The AS6C2016-55BIN holds the 68K work RAM only. It is asynchronous and sram_ctrl
-# takes the 68K path to the pins combinationally from registers (as the real board does), so no
-# register is packed into an IOE and nothing on the chip relates to a clock edge. As for the
-# PSRAM above, these constraints are windows on the delay the controller's clock counts assume, in
-# the frame of the 48 MHz PLL output (CLK_48M, shortest period T = 20.687 ns). The chip's own
-# timing is in sram_model.sv. In the CD build the SRAM holds FIX RAM and cd_fix_sram has these pins, all registers
-# on CLK_48M and in these windows: its header says how it keeps to them.
+# SRAM. The AS6C2016-55BIN holds the fix and part of M1 in the cart core and FIX RAM in the CD core. sram_port launches
+# every pin from a register on CLK_48M. As for the PSRAM above, these constraints are windows on the delay the port's clock
+# counts assume, in the frame of the 48 MHz PLL output (CLK_48M, shortest period T = 20.687 ns). The chip's own timing is in
+# sram_model.sv.
 #  - outputs (address, data, strobes, enables), reg to pad: -max 2.0 allows up to T - 2.0 - 0.12
 #    (clock uncertainty) = 18.6 ns after the edge, -min -1.0 allows no less than 1.0 ns. The window
 #    is 17.6 ns wide, less than a clock: of two pins launched a clock apart the later one cannot
-#    arrive first. That is all the ordering sram_ctrl relies on (data held a clock past WE#, the
-#    sweep changing the address a clock after WE# rises and WE# falling a clock after that): the
-#    model checks it as ORDER_NS. The 68K path through the core's decode (fx68k to neo_c1 to
-#    the pins) must fit this window too.
+#    arrive first, which is the ordering sram_port relies on. The model checks it as ORDER_NS.
 #  - inputs (read data): the chip's data cannot be valid earlier than the last output at its latest
 #    (T - 2.0 = 18.7 ns) + 0.4 board flight (ASSUMED, no board data) + tAA/tBA 55 ns (tOE 30 ns is
 #    shorter) + 0.4 flight = 74.5 ns after the edge: -max 74.5. -min 0.0: tOHZ and tBHZ have no
 #    minimum and flight is taken as 0.
-#  - the only pin path of the read data is pad to wram_q, a register inside sram_ctrl (wram_dout,
-#    one clock behind the pins); no logic of the core (the M68K_DATA mux, byteMux) sits between the
-#    pins and a register. The rule asks 4 edges of it: -setup 4 from the pins, -hold 3 so that hold
-#    stays the same-edge check, as for SDRAM above. The 68K gives more, measured with the real fx68k
-#    in sim/top. Its last latch is 8 CLK_48M cycles after the strobes fall, 165.5 ns (c1_wait.v gives
-#    the work RAM zone no wait state). The register costs one of them, so the pin data is needed at
-#    edge 7 (144.8 ns) after the strobes, against 82.7 ns asked here. The rest of the path is register
-#    to register in the core. The bench saw the data settled 3 clocks before that latch.
-# Budget of the pin to register path, 4 cycles = 82.7 ns: outputs at most 18.7 + 0.8 flight + 55
-# chip + input path, which is left 8.2 ns plus the lead of the capture register's clock. Measured
-# with the controller in the placeholder top (worst of four corners): outputs setup slack 7.2,
-# pin to wram_q 1.8 (Slow 85C), pin hold slack 0.14 (Fast 0C).
+#  - the read data goes from the pins straight to a register in sram_port. The rule asks 4 edges of it: -setup 4 from the
+#    pins, -hold 3 so that hold stays the same-edge check, as for SDRAM above. RD_CLKS is 5, one more than STA checks.
 set clk_48   [get_clocks {*cyclonev_pll|counter[1].output_counter|divclk}]
 set sram_out [get_ports {sram_a[*] sram_dq[*] sram_oe_n sram_we_n sram_ub_n sram_lb_n}]
 set sram_in  [get_ports {sram_dq[*]}]

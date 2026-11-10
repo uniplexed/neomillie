@@ -52,8 +52,9 @@
 // them, and only a full load could rebuild them. Changing game reloads the bitstream (slot 0
 // parameters 0x1D3, bits 7 and 8), so first_load is set again for each game.
 //
-// Saves: a bridge access to 0x6 or 0x7 runs two 16-bit accesses on port B of memcard.v or backup.v,
-// {b1, b0} then {b3, b2}. A read is started by the strobe and its word appears about 150 ns later.
+// Saves: a bridge access to 0x6 or 0x7 runs two 16-bit accesses, {b1, b0} then {b3, b2}, on port B of memcard.v, or, for
+// the cart's MVS backup RAM, on CRAM0 by a handshake with pocket_mem_mux. A read is started by the strobe and its word
+// appears about 150 ns later on the card; on CRAM0 at most two accesses of 200 ns each, as it ranks above the 68K.
 // io_bridge_peripheral.v:209-226 samples bridge_rd_data 4 clocks after the address and before the
 // strobe, so the word of address N is in the transaction for N + 1, at least 1.18 us later. The host
 // has to allow for that: the memory test's file came back with no lag from the same scheme.
@@ -137,14 +138,25 @@ module apf_loader #(
     output reg [31:0] disc_bin_size = 0,
     output reg        cd_mount_req = 0,
 
-    // Port B of backup.v and memcard.v
+    // Backup RAM in CRAM0, through pocket_mem_mux on CLK_96M: bk_req toggles, and bk_ack equals it when the access is over
     output     [14:0] sram_addr,
-    output reg        sram_wr = 0,
+    output reg        bk_req = 0,
+    output            bk_we,
+    input             bk_ack,
+    // Port B of memcard.v
     output     [11:0] memcard_addr,
     output reg        memcard_wr = 0,
     output reg [15:0] sd_buff_dout = 0,
     input      [15:0] sram_buff_dout,
-    input      [15:0] card_buff_dout
+    input      [15:0] card_buff_dout,
+    // Reset Core's save, clk_74a: a data slot write of core_bridge_cmd, whose ports are these while rs_busy
+    output            rs_busy,
+    output reg        rs_write = 0,
+    output     [15:0] rs_slot,
+    output     [31:0] rs_bridge,
+    output     [31:0] rs_length,
+    input             rs_host_free,         // no command in flight
+    input             rs_host_done
 );
 
 `include "apf_regs.svh"
@@ -244,6 +256,52 @@ end
 
 wire slot_wr = bridge_wr && slot_hit;
 
+// ---- Reset Core writes the saves to the SD, clk_74a ----
+// The host writes a nonvolatile slot on Quit only. Reset Core asks for the same writes: the card and, in MVS, the backup RAM. The
+// core stays in reset until they end, so that the BIOS does not change what the host is reading. An error, as a file that does not
+// exist yet, is left for Quit to write. A host that does not answer costs 8 reset holds, 4 s, and the core goes on.
+
+localparam [2:0] RS_IDLE = 0, RS_FREE = 1, RS_ISSUE = 2, RS_LOW = 3, RS_DONE = 4;
+
+reg  [2:0] rs_st = RS_IDLE;
+reg        rs_backup = 0;
+reg [28:0] rs_time = 0;
+
+wire rs_start = settings_wr && bridge_addr[11:0] == REG_CORE_RESET && bridge_wr_data[0];
+
+assign rs_busy   = rs_st != RS_IDLE;
+assign rs_slot   = rs_backup ? 16'h0102 : 16'h0101;
+assign rs_bridge = rs_backup ? 32'h7000_0000 : 32'h6000_0000;
+assign rs_length = rs_backup ? 32'd65536 : 32'd8192;
+
+always @(posedge clk_74a) begin
+    rs_time <= rs_time + 1'd1;
+    case (rs_st)
+        RS_FREE:  if (rs_host_free) rs_st <= RS_ISSUE;
+        RS_ISSUE: begin                         // the parameters are on the ports since RS_FREE; now the rising edge
+            rs_write <= 1;
+            rs_st    <= RS_LOW;
+        end
+        RS_LOW:   if (!rs_host_done) begin
+            rs_write <= 0;
+            rs_st    <= RS_DONE;
+        end
+        RS_DONE:  if (rs_host_done) begin
+            rs_backup <= mvs & ~rs_backup;
+            rs_st     <= (mvs & ~rs_backup) ? RS_FREE : RS_IDLE;
+        end
+        default:  if (rs_start) begin
+            rs_backup <= 0;
+            rs_time   <= 0;
+            rs_st     <= RS_FREE;
+        end
+    endcase
+    if (rs_busy && rs_time == 29'(8 * RESET_HOLD_CLKS)) begin
+        rs_write <= 0;
+        rs_st    <= RS_IDLE;
+    end
+end
+
 // ---- Core reset, clk_74a ----
 
 reg [25:0] reset_timer = 26'(RESET_HOLD_CLKS);
@@ -251,7 +309,7 @@ reg        core_reset_74 = 1;
 reg        first_load = 1;
 
 wire reset_restart = ~reset_n | ~dataslot_allcomplete | reconfiguring | slot_wr
-                   | (settings_wr && bridge_addr[11:0] == REG_CORE_RESET && bridge_wr_data[0])
+                   | rs_start | rs_busy
                    | (settings_wr && bridge_addr[11:0] == REG_SYSTEM_TYPE && bridge_wr_data[0] != system_type)
                    | (CD_BUILD && settings_wr && bridge_addr[11:0] == REG_CD_TYPE && bridge_wr_data[0] != cd_type);
 
@@ -310,7 +368,7 @@ always @(posedge clk_74a) begin
 `ifdef NEOGEO_WAIT_COUNTER
         else if (datatable_q == 32'h103) begin      // wait_counter.sv
             datatable_addr <= datatable_addr + 1'b1;
-            datatable_data <= CD_BUILD ? 32'd8192 : 32'd256;    // layout 3's 8 records and timelines, or layout 1
+            datatable_data <= 32'd8192;                         // layout 3's 8 records and timelines
             datatable_wren <= 1;
         end
 `endif
@@ -570,12 +628,14 @@ end
 
 // ---- Saves, CLK_96M. Port B clocks at clk_sys: each step leaves it two clocks of CLK_96M ----
 
-reg        sv_tog_d = 0, sv_busy = 0, sv_half = 0;
+reg        sv_tog_d = 0, sv_busy = 0, sv_half = 0, sv_wait = 0;
 reg  [3:0] sv_t = 0;
 reg [31:0] sv_rd_word = 0;
 
-wire [15:0] sv_q = sv_backup ? sram_buff_dout : card_buff_dout;
+wire        sv_cram  = sv_backup & ~CD_BUILD;
+wire [15:0] sv_wr_le = sv_half ? {sv_data[7:0], sv_data[15:8]} : {sv_data[23:16], sv_data[31:24]};
 
+assign bk_we          = sv_we;
 assign sram_addr      = {sv_addr, sv_half};
 assign memcard_addr   = {sv_addr[10:0], sv_half};
 assign bridge_rd_data = bridge_addr[31:28] == 4'hF ? {29'd0, settings_rd} : sv_rd_word;
@@ -586,24 +646,31 @@ always @(posedge CLK_96M) begin
         sv_busy <= 1;
         sv_half <= 0;
         sv_t    <= 0;
+    end else if (sv_busy && sv_cram) begin
+        if (!sv_wait) begin
+            sd_buff_dout <= sv_wr_le;
+            bk_req       <= ~bk_req;
+            sv_wait      <= 1;
+        end else if (bk_req == bk_ack) begin
+            sv_wait <= 0;
+            sv_half <= 1;
+            if (sv_half) begin
+                sv_busy <= 0;
+                if (!sv_we) sv_rd_word[15:0] <= {sram_buff_dout[7:0], sram_buff_dout[15:8]};
+            end else if (!sv_we) sv_rd_word[31:16] <= {sram_buff_dout[7:0], sram_buff_dout[15:8]};
+        end
     end else if (sv_busy) begin
         sv_t <= sv_t + 1'd1;
         case (sv_t)
-            0, 6: sd_buff_dout <= sv_half ? {sv_data[7:0], sv_data[15:8]} : {sv_data[23:16], sv_data[31:24]};
-            1, 7: begin
-                sram_wr    <= sv_we & sv_backup;
-                memcard_wr <= sv_we & ~sv_backup;
-            end
-            3, 9: begin
-                sram_wr    <= 0;
-                memcard_wr <= 0;
-            end
+            0, 6: sd_buff_dout <= sv_wr_le;
+            1, 7: memcard_wr <= sv_we & ~sv_backup;
+            3, 9: memcard_wr <= 0;
             5: begin
-                if (!sv_we) sv_rd_word[31:16] <= {sv_q[7:0], sv_q[15:8]};
+                if (!sv_we) sv_rd_word[31:16] <= {card_buff_dout[7:0], card_buff_dout[15:8]};
                 sv_half <= 1;
             end
             11: begin
-                if (!sv_we) sv_rd_word[15:0] <= {sv_q[7:0], sv_q[15:8]};
+                if (!sv_we) sv_rd_word[15:0] <= {card_buff_dout[7:0], card_buff_dout[15:8]};
                 sv_busy <= 0;
             end
             default: ;

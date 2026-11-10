@@ -8,4 +8,4 @@ sim/models/sram_model.sv
 rtl/pocket/sdram_ctrl.sv
 rtl/pocket/cram_ctrl.sv
 rtl/pocket/pocket_mem_mux.sv
-rtl/cd/cd_fix_sram.sv
+rtl/pocket/sram_port.sv

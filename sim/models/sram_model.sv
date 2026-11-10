@@ -50,7 +50,7 @@ module sram_model #(
     input  wire        lb_n,
     input  wire [1:0]  fpga_dq_oe,  // [1] high byte, [0] low byte: Verilator resolves no Z to test
     // A reset can cut a write short: that word is undefined, and the sweep that follows writes every
-    // word again. High only in the clocks where sram_ctrl takes WE# away, and it spares only the
+    // word again. High only in the clocks where sram_port takes WE# away, and it spares only the
     // width checks of the write ending then; the bench checks the sweep's result.
     input  wire        cut_write_ok
 );

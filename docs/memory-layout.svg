@@ -1,0 +1,159 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 862" width="1200" role="img">
+<title>Memory layout of the NeoMillie cartridge and CD cores</title>
+<desc>Which chip of the Analogue Pocket holds each ROM and RAM in the two cores. Details in docs/memory.md.</desc>
+<style>
+svg{font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+.bg{fill:#fbfaf7}
+.box{fill:#fff;stroke:#c9c6bc;stroke-width:1}
+.h{font-size:19px;font-weight:600;fill:#24231f}
+.b{font-size:15px;font-weight:600;fill:#24231f}
+.m{font-size:13px;fill:#6b6962}
+.t{font-size:14px}
+.a{font-size:13px;font-family:ui-monospace,Consolas,monospace}
+.rom{fill:#eeedfe;stroke:#afa9ec;stroke-width:.5}.romt{fill:#3c3489}
+.ram{fill:#e1f5ee;stroke:#5dcaa5;stroke-width:.5}.ramt{fill:#085041}
+.copy{fill:#faeeda;stroke:#ef9f27;stroke-width:.5}.copyt{fill:#633806}
+@media (prefers-color-scheme:dark){
+.bg{fill:#1c1b19}.box{fill:#252421;stroke:#4a4944}.h,.b{fill:#ecebe6}.m{fill:#a3a19a}
+.rom{fill:#3c3489;stroke:#7f77dd}.romt{fill:#eeedfe}
+.ram{fill:#085041;stroke:#1d9e75}.ramt{fill:#e1f5ee}
+.copy{fill:#633806;stroke:#ba7517}.copyt{fill:#faeeda}
+}
+</style>
+<rect class="bg" width="1200" height="862"/>
+<text class="h" x="24" y="44">Cartridge core (NeoMillie)</text>
+<rect class="box" x="24" y="58" width="564" height="250" rx="6"/>
+<text class="b" x="36" y="80">CRAM0</text>
+<text class="m" x="96" y="80">PSRAM, 16 MB, shared by 68K code and what does not fit elsewhere</text>
+<rect class="rom" x="30" y="94" width="552" height="23" rx="3"/>
+<text class="t romt" x="38" y="110">P1 ROM</text>
+<text class="a romt" x="574" y="110" text-anchor="end">0x000000 · 1 MB</text>
+<rect class="rom" x="30" y="121" width="552" height="23" rx="3"/>
+<text class="t romt" x="38" y="137">P2 ROM, banked</text>
+<text class="a romt" x="574" y="137" text-anchor="end">0x100000 · up to 7 MB</text>
+<rect class="rom" x="30" y="148" width="552" height="23" rx="3"/>
+<text class="t romt" x="38" y="164">PROG1</text>
+<text class="a romt" x="574" y="164" text-anchor="end">0x800000 · 1 MB</text>
+<rect class="rom" x="30" y="175" width="552" height="23" rx="3"/>
+<text class="t romt" x="38" y="191">System ROM (BIOS)</text>
+<text class="a romt" x="574" y="191" text-anchor="end">0xA00000 · 128 KB</text>
+<rect class="rom" x="30" y="202" width="552" height="23" rx="3"/>
+<text class="t romt" x="38" y="218">S ROM, whole file</text>
+<text class="a romt" x="574" y="218" text-anchor="end">0xC00000 · 512 KB</text>
+<rect class="rom" x="30" y="229" width="552" height="23" rx="3"/>
+<text class="t romt" x="38" y="245">SFIX</text>
+<text class="a romt" x="574" y="245" text-anchor="end">0xD00000 · 128 KB</text>
+<rect class="ram" x="30" y="256" width="552" height="23" rx="3"/>
+<text class="t ramt" x="38" y="272">MVS backup RAM</text>
+<text class="a ramt" x="574" y="272" text-anchor="end">0xD20000 · 64 KB</text>
+<rect class="rom" x="30" y="283" width="552" height="23" rx="3"/>
+<text class="t romt" x="38" y="299">M1 ROM, whole file</text>
+<text class="a romt" x="574" y="299" text-anchor="end">0xF80000 · 512 KB</text>
+<rect class="box" x="24" y="322" width="564" height="61" rx="6"/>
+<text class="b" x="36" y="344">CRAM1</text>
+<text class="m" x="96" y="344">PSRAM, 16 MB</text>
+<rect class="rom" x="30" y="358" width="552" height="23" rx="3"/>
+<text class="t romt" x="38" y="374">V ROMs (ADPCM-A, ADPCM-B)</text>
+<text class="a romt" x="574" y="374" text-anchor="end">0x000000 · 16 MB</text>
+<rect class="box" x="24" y="397" width="564" height="61" rx="6"/>
+<text class="b" x="36" y="419">SDRAM</text>
+<text class="m" x="96" y="419">64 MB</text>
+<rect class="rom" x="30" y="433" width="552" height="23" rx="3"/>
+<text class="t romt" x="38" y="449">C ROM (sprites), interleaved</text>
+<text class="a romt" x="574" y="449" text-anchor="end">0x0000000 · 64 MB</text>
+<rect class="box" x="24" y="472" width="564" height="115" rx="6"/>
+<text class="b" x="36" y="494">SRAM</text>
+<text class="m" x="96" y="494">256 KB, 128K x 16</text>
+<rect class="copy" x="30" y="508" width="552" height="23" rx="3"/>
+<text class="t copyt" x="38" y="524">S ROM, when it is 128 KB or less</text>
+<text class="a copyt" x="574" y="524" text-anchor="end">word 0x00000 · 128 KB</text>
+<rect class="copy" x="30" y="535" width="552" height="23" rx="3"/>
+<text class="t copyt" x="38" y="551">M1 ROM, its first 128 KB</text>
+<text class="a copyt" x="574" y="551" text-anchor="end">word 0x10000 · 128 KB</text>
+<text class="m" x="36" y="578">With a larger S ROM: the first 256 KB of M1, S stays on CRAM0</text>
+<rect class="box" x="24" y="601" width="564" height="223" rx="6"/>
+<text class="b" x="36" y="623">M10K</text>
+<text class="m" x="96" y="623">block RAM inside the FPGA</text>
+<rect class="ram" x="30" y="637" width="552" height="23" rx="3"/>
+<text class="t ramt" x="38" y="653">68K work RAM, 64 KB</text>
+<text class="a ramt" x="574" y="653" text-anchor="end">64 blocks</text>
+<rect class="ram" x="30" y="664" width="552" height="23" rx="3"/>
+<text class="t ramt" x="38" y="680">Sprite VRAM</text>
+<text class="a ramt" x="574" y="680" text-anchor="end">64 blocks</text>
+<rect class="rom" x="30" y="691" width="552" height="23" rx="3"/>
+<text class="t romt" x="38" y="707">LO ROM</text>
+<text class="a romt" x="574" y="707" text-anchor="end">64 blocks</text>
+<rect class="ram" x="30" y="718" width="552" height="23" rx="3"/>
+<text class="t ramt" x="38" y="734">Palette</text>
+<text class="a ramt" x="574" y="734" text-anchor="end">16 blocks</text>
+<rect class="ram" x="30" y="745" width="552" height="23" rx="3"/>
+<text class="t ramt" x="38" y="761">Memory card, XRAM, PVC</text>
+<text class="a ramt" x="574" y="761" text-anchor="end">8 blocks each</text>
+<rect class="copy" x="30" y="772" width="552" height="23" rx="3"/>
+<text class="t copyt" x="38" y="788">M1 read cache, 4 KB</text>
+<text class="a copyt" x="574" y="788" text-anchor="end">5 blocks</text>
+<rect class="copy" x="30" y="799" width="552" height="23" rx="3"/>
+<text class="t copyt" x="38" y="815">Fix read cache, 2 KB</text>
+<text class="a copyt" x="574" y="815" text-anchor="end">3 blocks</text>
+<text class="h" x="612" y="44">Neo Geo CD core (NeoMillieCD)</text>
+<rect class="box" x="612" y="58" width="564" height="88" rx="6"/>
+<text class="b" x="624" y="80">CRAM0</text>
+<text class="m" x="684" y="80">PSRAM, 16 MB, the 68K's alone while a game runs</text>
+<rect class="ram" x="618" y="94" width="552" height="23" rx="3"/>
+<text class="t ramt" x="626" y="110">PROG RAM</text>
+<text class="a ramt" x="1162" y="110" text-anchor="end">0x000000 · 2 MB</text>
+<rect class="rom" x="618" y="121" width="552" height="23" rx="3"/>
+<text class="t romt" x="626" y="137">BIOS</text>
+<text class="a romt" x="1162" y="137" text-anchor="end">0xA00000 · 512 KB</text>
+<rect class="box" x="612" y="160" width="564" height="61" rx="6"/>
+<text class="b" x="624" y="182">CRAM1</text>
+<text class="m" x="684" y="182">PSRAM, 16 MB</text>
+<rect class="ram" x="618" y="196" width="552" height="23" rx="3"/>
+<text class="t ramt" x="626" y="212">PCM RAM (ADPCM-A)</text>
+<text class="a ramt" x="1162" y="212" text-anchor="end">0x000000 · 1 MB</text>
+<rect class="box" x="612" y="235" width="564" height="61" rx="6"/>
+<text class="b" x="624" y="257">SDRAM</text>
+<text class="m" x="684" y="257">64 MB</text>
+<rect class="ram" x="618" y="271" width="552" height="23" rx="3"/>
+<text class="t ramt" x="626" y="287">SPR RAM, 4 banks</text>
+<text class="a ramt" x="1162" y="287" text-anchor="end">0x0000000 · 4 MB</text>
+<rect class="box" x="612" y="310" width="564" height="61" rx="6"/>
+<text class="b" x="624" y="332">SRAM</text>
+<text class="m" x="684" y="332">256 KB, 128K x 16</text>
+<rect class="ram" x="618" y="346" width="552" height="23" rx="3"/>
+<text class="t ramt" x="626" y="362">FIX RAM</text>
+<text class="a ramt" x="1162" y="362" text-anchor="end">word 0x00000 · 128 KB</text>
+<rect class="box" x="612" y="385" width="564" height="250" rx="6"/>
+<text class="b" x="624" y="407">M10K</text>
+<text class="m" x="684" y="407">block RAM inside the FPGA</text>
+<rect class="ram" x="618" y="421" width="552" height="23" rx="3"/>
+<text class="t ramt" x="626" y="437">Sprite VRAM</text>
+<text class="a ramt" x="1162" y="437" text-anchor="end">64 blocks</text>
+<rect class="ram" x="618" y="448" width="552" height="23" rx="3"/>
+<text class="t ramt" x="626" y="464">Z80 RAM, 64 KB</text>
+<text class="a ramt" x="1162" y="464" text-anchor="end">64 blocks</text>
+<rect class="rom" x="618" y="475" width="552" height="23" rx="3"/>
+<text class="t romt" x="626" y="491">LO ROM</text>
+<text class="a romt" x="1162" y="491" text-anchor="end">64 blocks</text>
+<rect class="ram" x="618" y="502" width="552" height="23" rx="3"/>
+<text class="t ramt" x="626" y="518">Palette</text>
+<text class="a ramt" x="1162" y="518" text-anchor="end">16 blocks</text>
+<rect class="ram" x="618" y="529" width="552" height="23" rx="3"/>
+<text class="t ramt" x="626" y="545">CD sector bank, 4 sectors</text>
+<text class="a ramt" x="1162" y="545" text-anchor="end">16 blocks</text>
+<rect class="ram" x="618" y="556" width="552" height="23" rx="3"/>
+<text class="t ramt" x="626" y="572">Memory card</text>
+<text class="a ramt" x="1162" y="572" text-anchor="end">8 blocks</text>
+<rect class="ram" x="618" y="583" width="552" height="23" rx="3"/>
+<text class="t ramt" x="626" y="599">CDDA buffer</text>
+<text class="a ramt" x="1162" y="599" text-anchor="end">7 blocks</text>
+<rect class="ram" x="618" y="610" width="552" height="23" rx="3"/>
+<text class="t ramt" x="626" y="626">LC8951 cache, 2 sectors</text>
+<text class="a ramt" x="1162" y="626" text-anchor="end">4 blocks</text>
+<rect class="rom" x="24" y="834" width="14" height="14" rx="3"/>
+<text class="m" x="44" y="846">ROM, loaded at start</text>
+<rect class="ram" x="204" y="834" width="14" height="14" rx="3"/>
+<text class="m" x="224" y="846">RAM</text>
+<rect class="copy" x="294" y="834" width="14" height="14" rx="3"/>
+<text class="m" x="314" y="846">Copy or cache of a ROM kept on CRAM0</text>
+</svg>

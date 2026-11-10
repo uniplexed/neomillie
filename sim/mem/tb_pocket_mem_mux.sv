@@ -69,7 +69,8 @@ module tb_pocket_mem_mux;
     wire  [15:0] PROM_DATA, SROM_DATA;
     wire         PROM_DATA_READY, DMA_SDRAM_BUSY, CD_EXT_WR_READY, CD_PCM_DTACK, dl_overflow;
     wire         fx_req, fx_we, fx_ack;
-    wire  [15:0] fx_word, fx_wdata, fx_rdata;
+    wire  [16:0] fx_word;
+    wire  [15:0] fx_wdata, fx_rdata;
     wire   [1:0] fx_be;
     wire  [63:0] CR_DOUBLE;
     wire   [7:0] adpcma_dout, adpcmb_dout, m1_dout;
@@ -104,6 +105,7 @@ module tb_pocket_mem_mux;
         .adpcmb_addr(adpcmb_addr), .adpcmb_dout(adpcmb_dout), .adpcmb_req(adpcmb_req), .adpcmb_ack(adpcmb_ack),
         .v2_offset(V2_OFFSET),
         .m1_addr(m1_addr), .m1_dout(m1_dout), .m1_req(m1_req), .m1_ack(m1_ack),
+        .BK_RD(1'b0), .BK_WR(2'b00), .bk_req(1'b0), .bk_we(1'b0), .bk_addr(15'd0), .bk_wdata(16'd0), .bk_ack(), .bk_rdata(), .ROM_COPY_BUSY(),
         .dram_dq(dram_dq), .dram_a(dram_a), .dram_dqm(dram_dqm), .dram_ba(dram_ba), .dram_we_n(dram_we_n),
         .dram_ras_n(dram_ras_n), .dram_cas_n(dram_cas_n), .dram_cke(dram_cke), .dram_clk(dram_clk),
         .cram0_a(c0_a), .cram0_dq(c0_dq), .cram0_wait(1'b0), .cram0_clk(c0_clk), .cram0_adv_n(c0_adv),
@@ -128,7 +130,7 @@ module tb_pocket_mem_mux;
         .oe_n(c1_oe), .we_n(c1_we), .ub_n(c1_ub), .lb_n(c1_lb), .fpga_dq_oe(dut.u_cram1.dq_oe)
     );
 
-    cd_fix_sram u_fix (
+    sram_port u_fix (
         .clk(clk48), .req(fx_req), .we(fx_we), .word(fx_word), .be(fx_be), .wdata(fx_wdata), .ack(fx_ack), .rdata(fx_rdata),
         .sram_a(s_a), .sram_dq(s_dq), .sram_oe_n(s_oe), .sram_we_n(s_we), .sram_ub_n(s_ub), .sram_lb_n(s_lb)
     );
