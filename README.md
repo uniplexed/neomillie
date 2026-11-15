@@ -2,8 +2,9 @@
 
 # NeoMillie
 
-Neo Geo and Neo Geo CD cores for the Analogue Pocket, built from the current MiSTer Neo Geo RTL with a new hardware layer
-for the Pocket.
+NeoMillie is an FPGA core for the Analogue Pocket that lets you play Neo Geo games. It is ported from the current Neo Geo
+RTL of the MiSTer project, with a new hardware layer for the Pocket. It comes as two cores: NeoMillie plays cartridge games
+as an AES console or an MVS arcade board, and NeoMillieCD plays Neo Geo CD discs.
 
 | Core | What it runs |
 |---|---|
@@ -41,7 +42,7 @@ From this version the two cores share one version number and one release.
 | Region | Japan, USA or Europe, through the UniBIOS |
 | Memory Card Unplugged | Makes the console see no memory card |
 | Games with the SMA chip | A timing fix in the chip's bank switch, which The King of Fighters '99, Garou, Metal Slug 3 and The King of Fighters 2000 use. Metal Slug 3 was played on a Pocket with it |
-| Load Game | The entry that picks a game has that name in the Pocket's menu. It read Load Game JSON Setup |
+| Load Game | The entry that picks a game now has that name in the Pocket's menu, where it read Load Game JSON Setup |
 
 ### In the CD core
 
@@ -63,8 +64,8 @@ Seven loads of The King of Fighters '99 added up, timed by the core on one Pocke
 
 ### Disc converter
 
-The NeoMillieCD Converter turns a disc kept in another form into the one CUE and one BIN the core reads. It now has a
-window, for Windows x64, macOS on Apple Silicon and Linux x64, beside the Python script. It reads a CUE with BIN, ISO, WAV,
+The NeoMillieCD Converter turns a disc kept in another form into the one CUE and one BIN the core reads. Besides the
+Python script, it now has a window, built for Windows x64, macOS on Apple Silicon and Linux x64. It reads a CUE with BIN, ISO, WAV,
 big-endian or compressed audio, and CloneCD, Alcohol 120%, Nero, DiscJuggler and CHD images, one disc or a whole folder at
 a time. A failed or cancelled disc leaves nothing behind, and a disc already converted is skipped unless you ask to
 overwrite it.
@@ -83,8 +84,9 @@ overwrite it.
 
 ## Installing
 
-Download the zips from [Releases](https://github.com/uniplexed/neomillie/releases) and unzip each to the root of the SD
-card, merging folders. Then add your own files.
+Download the two core zips, `uniplexed.NeoMillie_<version>.zip` and `uniplexed.NeoMillieCD_<version>.zip`, from
+[Releases](https://github.com/uniplexed/neomillie/releases) and unzip each to the root of the SD card, merging folders.
+Then add your own files.
 
 Cartridges, in `Assets/ng/common/`: `uni-bios_4_0.rom`, `000-lo.lo`, `sfix.sfix`, and one folder per game in the Darksoft
 layout. ROMs and BIOS you already use with the Neo Geo Overdrive core work as they are. On the Pocket open openFPGA, then
@@ -94,8 +96,8 @@ Discs, in `Assets/ngcd/common/`: `uni-bioscd.rom` (the UniBIOS CD, 524,288 bytes
 with its `.cue` and `.bin`. On the Pocket open openFPGA, then Neo Geo CD, then NeoMillieCD, and pick the `.cue` on the Disc
 entry of Core Settings.
 
-The [manual](docs/manual.md#what-you-need) lists each file. Discs kept in other formats go through the NeoMillieCD
-Converter, attached to each release, as the [manual](docs/manual.md#disc-images) explains.
+The [manual](docs/manual.md#what-you-need) lists each file. For discs kept in other formats, use the NeoMillieCD
+Converter, whose zips are attached to the same release; the [manual](docs/manual.md#disc-images) explains how.
 
 ## What has been tested
 
@@ -148,8 +150,8 @@ Every run is in [docs/hw-tests.md](docs/hw-tests.md), the project's log of hardw
 
 ## Known issues and limits
 
-- CD Turbo 4x is in beta and tested on a few discs. It is no real drive, so unlike the two real speeds it waits for the
-  program: a sector is held back while the decoder's interrupt is masked (50 ms at most) and, after the unmask, until
+- CD Turbo 4x is in beta and has been tested on a few discs. It copies no real drive, so unlike the two real
+  speeds it waits for the program: a sector is held back while the decoder's interrupt is masked (50 ms at most) and, after the unmask, until
   the BIOS has read its count of sectors left. A program that keeps the interrupt open from one sector to the next gets
   them at 2x: Samurai Shodown RPG builds its file list that way, and at 4x it lost names and loaded from the wrong place.
 - A read of the SD card can take around 450 ms. It slows a load, and in simulation it leaves a silent gap in the disc's
@@ -178,8 +180,8 @@ Every run is in [docs/hw-tests.md](docs/hw-tests.md), the project's log of hardw
 
 ## Artwork
 
-NeoMillieCD's banner on the Pocket, with Millie, the logo. NeoMillie ships no banner: every Neo Geo core shares the `ng`
-platform, and its image is the openFPGA library's.
+This is NeoMillieCD's banner on the Pocket, with Millie, the logo. NeoMillie ships no banner, because every Neo Geo core
+shares the `ng` platform and its image comes from the openFPGA library.
 
 <p><img src="docs/banners/neomilliecd-banner.png" alt="NeoMillieCD banner: Millie with a CD" width="420"></p>
 

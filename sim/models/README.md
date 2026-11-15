@@ -1,4 +1,5 @@
 # Simulation models
 
-Behavioural models shared by testbenches (memories, bus masters, etc.) live here.
+Behavioural models that NeoMillie's testbenches share: the Pocket's PSRAM, SDRAM and SRAM chips, and stand-ins for the
+Altera primitives the RTL keeps.
 List the ones a bench needs in its `files.f`.

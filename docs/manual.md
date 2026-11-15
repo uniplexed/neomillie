@@ -4,8 +4,10 @@
 
 For NeoMillie and NeoMillieCD 0.6.0 on the Analogue Pocket.
 
-NeoMillie runs Neo Geo cartridge games, in home console (AES) or arcade (MVS) mode. NeoMillieCD runs Neo Geo CD discs. Both
-are openFPGA cores. Neither comes with a BIOS, a game or a disc: you supply your own.
+NeoMillie is an FPGA core for the Analogue Pocket that plays Neo Geo games. It is ported from the MiSTer project's Neo Geo
+RTL, which recreates the console's chips in the FPGA. NeoMillie plays cartridge games as a home console
+(AES) or an arcade board (MVS), and NeoMillieCD plays Neo Geo CD discs. Both are openFPGA cores. Neither comes with a
+BIOS, a game or a disc: you supply your own.
 
 ## Contents
 
@@ -74,8 +76,8 @@ What L and R do is set by [L/R Buttons](#lr-buttons). A second controller, throu
 
 ## The menu of the cartridge core
 
-With a game running, open the Pocket's menu and go to Core Settings. The Pocket lists the core's items in this order. The
-numbers are the ones this section uses. The Pocket shows one plain list: the group names are only in this picture.
+With a game running, open the Pocket's menu and go to Core Settings. The Pocket lists the core's items in the order below,
+numbered as in the picture. On the Pocket they form one plain list, without the group names.
 
 ![The cartridge core's menu, with each item's default](img/menu-cart.svg)
 
@@ -229,9 +231,9 @@ open the app once, close the message that it cannot be checked, then in System S
 
    ![Four discs added, the SD card as the destination, a CHD that needs chdman](img/converter-step2-added.png)
 
-4. Look at the status column. A disc that says *needs chdman* or *needs ffmpeg* waits for that program: install it
-   (see [ffmpeg and chdman](#ffmpeg-and-chdman)) or press *Locate…* beside it and pick the program. The disc turns to
-   *pending*.
+4. Look at the status column. A disc that says *needs chdman* or *needs ffmpeg* waits for that program. Install it
+   (see [ffmpeg and chdman](#ffmpeg-and-chdman)), or press *Locate…* beside the program's name under *Tools* and pick
+   the program. The disc then turns to *pending*.
 
    ![chdman located: every disc is pending](img/converter-step3-tools.png)
 
@@ -246,7 +248,7 @@ open the app once, close the message that it cannot be checked, then in System S
 
    ![Every disc done](img/converter-step5-done.png)
 
-The window remembers the destination and where ffmpeg and `chdman` are.
+The window remembers the destination, whether *SD card layout* is on, and where ffmpeg and `chdman` are.
 
 ### The script
 
@@ -261,8 +263,8 @@ it for one disc. On Linux the window may need the distribution's `python3-tk`.
 
 ### ffmpeg and chdman
 
-Neither comes with the converter. It finds each on the PATH or beside the converter, and the window has *Locate* for
-them.
+Neither comes with the converter. It looks for each beside the converter and on the PATH, and in the window you can
+point to them with *Locate…*.
 
 | Needed for | Windows | macOS | Debian and Ubuntu |
 |---|---|---|---|
@@ -284,7 +286,7 @@ by the core itself on one Pocket.
 | On | On | 24 MHz | 23.6 s |
 
 CD/CDZ on is the tested setting for everyday use. CD Turbo 4x gives the largest gain and is still in beta. The 68K
-Clock helps loads only a little: its real use is the slowdown in busy scenes.
+Clock shortens loads only a little; it is mainly for the slowdown in busy scenes.
 
 ## Saves
 
@@ -309,7 +311,8 @@ voices for the fighters', a quarter of a megabyte copied by the processor. A rea
 The UniBIOS's SYSTEM item shows a console type and lets you change it. In these cores it has no effect. AES/MVS decides
 on cartridges and CD/CDZ on discs.
 
-After you change AES/MVS, CD/CDZ, CD Turbo 4x or the 68K Clock the game restarts. That is the setting taking effect.
+The game restarts when you change AES/MVS, CD/CDZ, CD Turbo 4x or the 68K Clock. The restart is how the new setting
+takes effect, not a crash.
 
 ## When something goes wrong
 

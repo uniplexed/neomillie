@@ -58,7 +58,7 @@ Fixed priority, highest first. A request stays pending until it is served.
 |---|---|---|
 | CRAM0 | Loader, save path, posted backup write, 68K, fix if on CRAM0, Z80 if on CRAM0, S and M1 copy | Loader, 68K, CD write queue |
 | CRAM1 | Loader, ADPCM-A, ADPCM-B | Loader, CD write queue, ADPCM-A, ADPCM-B |
-| SDRAM | Sprite, loader, with refresh spaced by a watchdog | Sprite, CD read, loader, CD write queue, with refresh |
+| SDRAM | Sprite, loader, with refresh spaced by a watchdog | Sprite, CD read, loader, CD write queue, CD Turbo ring read, CD Turbo ring write, with refresh |
 | SRAM | Fix, copy write, Z80 | Fix, CD read, CD write |
 
 A Z80 read starts only within `Z80_WINDOW` (53 clocks) of PCK2's fall, so none is in flight when the next fix read lands.
@@ -147,16 +147,16 @@ Each build target sets it in its `.qsf`:
 The bridge accesses them at 0x6xxxxxxx and 0x7xxxxxxx, two 16-bit accesses per 32-bit word. The host leaves 1.18 µs between words, and the word
 of address N comes back in the read of N + 1. Both are in `rtl/pocket/apf_loader.sv`.
 
-In `data.json`, a card that takes its name from slot 0 (`parameters` bit 2) is written on Quit only when slot 0 has no fixed `filename`.
+In `data.json`, a card that takes its name from slot 0 (`parameters` bit 2) is written on Quit only when slot 0 has no fixed `filename`. Both cores also ask the Pocket to write the card on Reset Core.
 The cart core picks the game in slot 0, so its card has one file per game. The CD core's slot 0 is the BIOS, so its card has a fixed name.
 
 ## Measuring
 
-The 68K wait counter counts the clocks the 68K loses waiting for CRAM0, and writes them to `wait.sav` in the debug cores. `neogeo_debug` is the cart build and `neogeocd_debug`
+The 68K wait counter counts the clocks the 68K loses waiting for CRAM0, and the debug cores write them to `waitt.sav`. `neogeo_debug` is the cart build and `neogeocd_debug`
 the CD build.
 
     python tools/build.py neogeo_debug
-    python tools/check_wait_save.py wait.sav
+    python tools/check_wait_save.py waitt.sav
 
 Benches, each `python tools/sim.py <name>`: `mem` the mux and the layouts against models of the chips, `apf` the loader and saves, `top` and `topcd` each core whole, `contention` an estimate of the waits for each layout, from a model of the traffic, always passing.
 

@@ -1,6 +1,6 @@
 # Vendored from Main_MiSTer
 
-`megacdd.cpp`, `megacd.h` and `cd.h` are byte-identical copies, for the golden trace of `sim/cdd` only. They are not built into the core.
+`megacdd.cpp`, `megacd.h` and `cd.h` are byte-identical copies, used only for the golden trace of NeoMillie's `sim/cdd` bench. They are not built into any core.
 
 - Repository: https://github.com/MiSTer-devel/Main_MiSTer
 - Commit: `7912f7693a2328ef5b53ac83be74d5c99b932a47` (2026-11-02)

@@ -45,17 +45,38 @@ class Diagram:
         self.y = y + h + 26
 
     def right(self, a, b):
+        """From a's right edge to b's left edge, a and b side by side in one row."""
         ax, ay, aw, ah = self.pos[a]; bx, by, _, bh = self.pos[b]
-        self.parts.append(f'<path class="a" marker-end="url(#ah)" d="M{ax + aw:.0f} {ay + ah / 2:.0f} L{bx - 2:.0f} {by + bh / 2:.0f}"/>')
+        self.arrow(f"M{ax + aw:.0f} {ay + ah / 2:.0f} L{bx - 2:.0f} {by + bh / 2:.0f}")
 
-    def down(self, a, b, at=0.5, to=0.5, label=None):
+    def left(self, a, b):
+        """From a's left edge to b's right edge, b to the left of a in one row."""
+        ax, ay, _, ah = self.pos[a]; bx, by, bw, bh = self.pos[b]
+        self.arrow(f"M{ax:.0f} {ay + ah / 2:.0f} L{bx + bw + 2:.0f} {by + bh / 2:.0f}")
+
+    def down(self, a, b, x=None, x2=None, dy=10, label=None, side="right"):
+        """From a's bottom to b's top, a row or more below. x: where it leaves a (its middle unless given); x2:
+        where it enters b (straight below x unless given). A bend runs dy below a. The label sits beside the
+        stretch that enters b, on the side asked."""
         ax, ay, aw, ah = self.pos[a]; bx, by, bw, _ = self.pos[b]
-        x1, x2, y1, y2 = ax + aw * at, bx + bw * to, ay + ah, by - 2
-        mid = y1 + 9
-        d = f"M{x1:.0f} {y1} L{x2:.0f} {y2}" if abs(x1 - x2) < 1 else f"M{x1:.0f} {y1} L{x1:.0f} {mid} L{x2:.0f} {mid} L{x2:.0f} {y2}"
-        self.parts.append(f'<path class="a" marker-end="url(#ah)" d="{d}"/>')
+        x1 = ax + aw / 2 if x is None else x
+        x2 = x1 if x2 is None else x2
+        y1, y2, mid = ay + ah, by - 2, ay + ah + dy
+        bent = abs(x1 - x2) >= 1
+        self.arrow(f"M{x1:.0f} {y1} L{x1:.0f} {mid} L{x2:.0f} {mid} L{x2:.0f} {y2}" if bent
+                   else f"M{x1:.0f} {y1} L{x2:.0f} {y2}")
         if label:
-            self.parts.append(f'<text class="s" x="{min(x1, x2) + 8:.0f}" y="{mid - 3 if abs(x1 - x2) >= 1 else y1 + 15}">{html.escape(label)}</text>')
+            ly = (mid + y2) / 2 + 4 if bent else y1 + 20
+            lx, anchor = (x2 + 7, "start") if side == "right" else (x2 - 7, "end")
+            self.parts.append(f'<text class="s" x="{lx:.0f}" y="{ly:.0f}" text-anchor="{anchor}">'
+                              f'{html.escape(label)}</text>')
+
+    def centre(self, key):
+        x, _, w, _ = self.pos[key]
+        return x + w / 2
+
+    def arrow(self, d):
+        self.parts.append(f'<path class="a" marker-end="url(#ah)" d="{d}"/>')
 
     def svg(self):
         h = self.y
@@ -71,7 +92,6 @@ def pocket_row(d, card_lines, loader_lines):
         ("sd", "host", "SD card", card_lines),
         ("os", "host", "Pocket system", ["reads files, shows the menu,", "writes saves on Quit"]),
         ("ld", "host", "Loader and settings", loader_lines),
-        ("pad", "host", "Buttons", ["read by the 68K; L/R Buttons", "sets what L and R press"]),
     ], h=78)
     d.right("sd", "os"); d.right("os", "ld")
 
@@ -80,35 +100,35 @@ def memory_rows(d, chips, users):
     d.row("MEMORY", [("arb", "mem", "Memory arbiter",
                       ["gives each chip to one user at a time, in a fixed order of priority, so that the picture never waits"])], h=56)
     d.row("", chips, h=92)
-    for key, at in users:
-        d.down(key, "arb", to=at)
-    for i, (key, *_) in enumerate(chips):
-        d.down("arb", key, at=(i + 0.5) / len(chips))
+    for key in users:                    # straight down from each user, and to each chip
+        d.down(key, "arb")
+    for key, *_ in chips:
+        d.down("arb", key, x=d.centre(key))
 
 
 def cd():
     d = Diagram("The parts of NeoMillieCD", "The Pocket's side, the rebuilt CD drive, the console and the memory chips of the CD core, and what passes between them.")
     pocket_row(d, ["BIOS, disc (CUE and BIN),", "memory card file"], ["takes the BIOS, and each", "menu item as a register"])
+    # Right to left, as the RTL does it: the mount gives the drive its tracks, the drive asks for sectors, the
+    # fetch (or with Turbo its ring) reads them from the Pocket and hands them to the decoder and the sound
     d.row("THE CD DRIVE, REBUILT", [
+        ("dec", "cd", "Decoder", ["offers each data sector to", "the 68K, which copies it", "into memory"]),
+        ("fetch", "cd", "Sector fetch", ["reads sectors five ahead of", "the drive; with CD Turbo 4x,", "256 in a ring in SDRAM"]),
+        ("drive", "cd", "Drive model", ["seeks, plays and answers the", "BIOS; 1x or 2x by CD/CDZ,", "up to 4x by Turbo"]),
         ("mount", "cd", "Disc mount", ["reads the CUE: the tracks,", "data or audio, and where", "each one starts"]),
-        ("fetch", "cd", "Sector fetch", ["asks the Pocket for sectors", "and keeps five read ahead", "of the drive"]),
-        ("ring", "cd", "Turbo ring", ["with CD Turbo 4x: 256 sectors", "kept ready in SDRAM,", "filled 16 per read"]),
-        ("drive", "cd", "Drive model", ["seeks, plays and answers", "the BIOS; 1x or 2x by", "CD/CDZ, 4x by Turbo"]),
-        ("dec", "cd", "Decoder", ["offers each sector to the", "68K, which copies it into", "memory"]),
     ])
-    d.down("os", "fetch", at=0.5, to=0.5)
-    d.down("ld", "drive", at=0.5, to=0.5)
-    for a, b in (("mount", "fetch"), ("fetch", "ring"), ("ring", "drive"), ("drive", "dec")):
-        d.right(a, b)
+    d.down("os", "fetch", x=d.centre("fetch"), label="sectors")
+    d.down("os", "mount", x=d.pos["os"][0] + d.pos["os"][2] - 30, x2=d.centre("mount"), label="the CUE")
+    d.left("mount", "drive"); d.left("drive", "fetch"); d.left("fetch", "dec")
     d.row("THE CONSOLE", [
-        ("cpu", "con", "68K processor", ["runs the BIOS and the game;", "12, 16 or 24 MHz by", "68K Clock"]),
+        ("cpu", "con", "68K processor", ["runs the BIOS and the game,", "reads the buttons; 12, 16", "or 24 MHz by 68K Clock"]),
         ("vid", "con", "Video chip", ["draws the sprites and the", "text layer, line by line"]),
         ("pic", "out", "Picture out", ["304 or 320 wide, PAL,", "position, and the scaler's", "aspect ratio"]),
         ("snd", "con", "Sound", ["Z80 processor and YM2610:", "FM and samples, plus the", "disc's music"]),
         ("aud", "out", "Sound out", ["Stereo Mix, Mute and", "ADPCM-A Channel act", "here"]),
     ])
-    d.down("dec", "cpu", at=0.5, to=0.8, label="program, graphics and samples from the disc")
-    d.down("drive", "snd", at=0.5, to=0.5, label="music")
+    d.down("dec", "cpu", x=d.centre("cpu"), label="program, graphics and samples")
+    d.down("fetch", "snd", x2=d.centre("snd"), dy=14, label="music")
     d.right("vid", "pic"); d.right("snd", "aud")
     memory_rows(d, [
         ("c0", "mem", "PSRAM 1, 16 MB", ["the BIOS and the", "game's program"]),
@@ -116,7 +136,7 @@ def cd():
         ("sd2", "mem", "SDRAM, 64 MB", ["sprites, and the", "Turbo ring"]),
         ("sr", "mem", "SRAM, 256 KB", ["the text layer"]),
         ("fp", "mem", "Inside the FPGA", ["the Z80's program,", "colours, the memory", "card"]),
-    ], [("cpu", 0.1), ("vid", 0.3), ("snd", 0.7)])
+    ], ["cpu", "vid", "snd"])
     return d.svg()
 
 
@@ -124,14 +144,13 @@ def cart():
     d = Diagram("The parts of NeoMillie", "The Pocket's side, the console with its cartridge and the memory chips of the cartridge core, and what passes between them.")
     pocket_row(d, ["BIOS, a folder of ROM files", "per game, save files"], ["the game's entry says which", "file goes to which chip"])
     d.row("THE CONSOLE AND ITS CARTRIDGE", [
-        ("cpu", "con", "68K processor", ["runs the BIOS and", "the game; 12, 16 or", "24 MHz by 68K Clock"]),
+        ("cpu", "con", "68K processor", ["runs the BIOS and", "the game, reads the", "buttons; 12, 16 or", "24 MHz by 68K Clock"]),
         ("chips", "con", "Cartridge chips", ["bank switching and", "protection (SMA, PVC,", "CMC), as a game needs"]),
         ("vid", "con", "Video chip", ["draws the sprites", "and the text layer,", "line by line"]),
         ("pic", "out", "Picture out", ["304 or 320 wide,", "PAL, position and", "aspect ratio"]),
         ("snd", "con", "Sound", ["Z80 and YM2610: FM,", "two kinds of samples,", "square waves"]),
         ("aud", "out", "Sound out", ["Stereo Mix, Mute", "and ADPCM-A", "Channel act here"]),
-    ])
-    d.down("ld", "chips", at=0.5, to=0.5, label="the ROMs, copied to memory before the game starts")
+    ], h=108)
     d.right("cpu", "chips"); d.right("vid", "pic"); d.right("snd", "aud")
     memory_rows(d, [
         ("c0", "mem", "PSRAM 1, 16 MB", ["the BIOS, the game's", "program, MVS backup RAM"]),
@@ -139,7 +158,10 @@ def cart():
         ("sd2", "mem", "SDRAM, 64 MB", ["sprites"]),
         ("sr", "mem", "SRAM, 256 KB", ["the text layer and the", "Z80's program, copied", "here after a load"]),
         ("fp", "mem", "Inside the FPGA", ["the 68K's work RAM,", "colours, the memory", "card, two read caches"]),
-    ], [("cpu", 0.08), ("vid", 0.42), ("snd", 0.75)])
+    ], ["cpu", "vid", "snd"])
+    # The ROMs go to the memory chips, down the gap between Sound and Sound out, which is under the loader
+    gap = (d.pos["snd"][0] + d.pos["snd"][2] + d.pos["aud"][0]) / 2
+    d.down("ld", "arb", x=gap, label="the ROMs, before the game starts", side="left")
     return d.svg()
 
 
