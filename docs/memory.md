@@ -108,7 +108,7 @@ The sample must come after the chip's tAA of 70 ns plus 11.22 ns of pads and boa
 The minimum the controller accepts is 4, or OE# is never low. Static timing checks the delay from registers to pads, not the chip, so a
 met timing report says nothing about whether a lower value reads correctly.
 
-The release stays at 8 because it is the only value inside the data sheet, and lowering it did not help. On the wait counter, Metal Slug X, first
+The release stays at 8 because it is the only value inside the data sheet, and lowering it did not help. Measured during development, Metal Slug X, first
 mission, one play each, with the layout before the split above: `RD_WAIT` 8 lost 2.019% of the 68K's clocks and 7 lost 2.068%. One play of each cannot separate
 a difference that small.
 
@@ -121,7 +121,7 @@ Each build target sets it in its `.qsf`:
 
     set_global_assignment -name VERILOG_MACRO "NEOGEO_RD_WAIT=8"
 
-`synth/neogeo` and `synth/neogeocd` are the releases, `neogeo_debug` and `neogeocd_debug` their debug builds, and `memtest` the memory self-test. To simulate another value, set `SIM_DEFINES`, and lower the chip model's access time to match, or the model will report the read as too early:
+`synth/neogeo` and `synth/neogeocd` are the two cores, and `memtest` the memory self-test. To simulate another value, set `SIM_DEFINES`, and lower the chip model's access time to match, or the model will report the read as too early:
 
     SIM_DEFINES='+define+NEOGEO_RD_WAIT=7 +define+PSRAM_T_ACC=60' python tools/sim.py top
 
@@ -152,11 +152,7 @@ The cart core picks the game in slot 0, so its card has one file per game. The C
 
 ## Measuring
 
-The 68K wait counter counts the clocks the 68K loses waiting for CRAM0, and the debug cores write them to `waitt.sav`. `neogeo_debug` is the cart build and `neogeocd_debug`
-the CD build.
-
-    python tools/build.py neogeo_debug
-    python tools/check_wait_save.py waitt.sav
+The 68K wait counter (`rtl/test/wait_counter.sv`) counts the clocks the 68K loses waiting for CRAM0. It is a development tool, not part of the released cores, and the figures on this page come from it.
 
 Benches, each `python tools/sim.py <name>`: `mem` the mux and the layouts against models of the chips, `apf` the loader and saves, `top` and `topcd` each core whole, `contention` an estimate of the waits for each layout, from a model of the traffic, always passing.
 

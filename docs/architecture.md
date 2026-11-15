@@ -19,7 +19,7 @@ or its protection. The loader copies each ROM to the memory chip that suits it a
 While the game runs, three parts of the console read memory all the time: the 68K its program, the video chip its sprites
 and text, and the sound side its samples and the Z80's program. One arbiter decides who gets each chip. The video chip
 goes first, because a sprite or a text tile that arrives late shows on screen as a wrong pixel. The 68K can wait a cycle,
-and the debug build counts how often it does: on Metal Slug X it loses 0.000% of its clocks.
+and it seldom does: on Metal Slug X it loses 0.000% of its clocks.
 
 Every menu item is a register the Pocket writes. Most act at once. AES/MVS and 68K Clock restart the console, since a real
 one could not change them while running.

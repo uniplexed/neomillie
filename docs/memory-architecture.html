@@ -138,7 +138,7 @@ footer{margin-top:40px;color:var(--muted);font-size:13px}
 <div class="legend"><span><i style="background:var(--rom)"></i>ROM, loaded at start</span><span><i style="background:var(--ram)"></i>RAM, filled by the BIOS and the game</span></div>
 
 <h2>Who shares a chip with the 68K</h2>
-<p>Both cores put the 68K's code on CRAM0. They differ in who else reads that chip, which decides how often the 68K waits. The figures are from the 68K wait counter on hardware, one play each: Metal Slug X, first mission, on the cart core, and Metal Slug on the CD core.</p>
+<p>Both cores put the 68K's code on CRAM0. They differ in who else reads that chip, which decides how often the 68K waits. The figures were measured on hardware during development, one play each: Metal Slug X, first mission, on the cart core, and Metal Slug on the CD core.</p>
 <div class="wrap"><table>
 <tr><th></th><th>Cart core</th><th>CD core</th></tr>
 <tr><td>68K code</td><td>P ROM and BIOS on CRAM0</td><td>PROG RAM and BIOS on CRAM0</td></tr>
@@ -169,7 +169,7 @@ footer{margin-top:40px;color:var(--muted);font-size:13px}
 <h3>Put each stream on the chip that suits it</h3>
 <ul>
 <li><b>Sprites to SDRAM.</b> The sprite fetch is the heaviest stream: 64 bits each PCK1. The SDRAM's bursts serve it; it holds the 64 MB C ROM, or the CD's 4 MB SPR RAM.</li>
-<li><b>68K code and data to CRAM0.</b> P ROM, BIOS, fix and M1 are short random reads, which an asynchronous PSRAM answers with a fixed latency. The 68K's wait counter measures what it costs.</li>
+<li><b>68K code and data to CRAM0.</b> P ROM, BIOS, fix and M1 are short random reads, which an asynchronous PSRAM answers with a fixed latency. Its cost was measured during development.</li>
 <li><b>Sound to CRAM1.</b> ADPCM-A and -B read the V ROMs, or the CD's PCM RAM, on their own chip, with no 68K or sprite traffic to wait behind. On MiSTer these go to DDR3.</li>
 <li><b>Fix and Z80 program to SRAM, as far as it holds.</b> The fix layer is read every PCK2 and must not wait. In the CD core the SRAM is FIX RAM with its own arbiter; in the cart core it holds copies of the S ROM and the first part of the M1 ROM, made after each load, and what stays on CRAM0 goes through two small read caches.</li>
 </ul>
@@ -178,7 +178,7 @@ footer{margin-top:40px;color:var(--muted);font-size:13px}
 <h3>Choices in the CD core</h3>
 <ul>
 <li>Z80 RAM in M10K, as MiSTer: 64 blocks.</li>
-<li>PROG RAM in CRAM0, its cost measured with the 68K wait counter.</li>
+<li>PROG RAM in CRAM0, its cost measured during development.</li>
 </ul>
 <h3>What the Pocket cannot hold, and what it gains</h3>
 <ul>

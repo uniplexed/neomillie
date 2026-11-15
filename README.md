@@ -113,7 +113,7 @@ All with `uni-bioscd.rom`.
 | The King of Fighters '97 | CD/CDZ on | A fight reached, music fine | 0.5.1 |
 | The King of Fighters '97 | CD/CDZ off | A fight reached | 0.5.1 |
 | The King of Fighters '98 | CD/CDZ on | Plays, sounds fine | 0.5.1 |
-| The King of Fighters '99 | CD/CDZ on and off, CD Turbo 4x on and off, 12, 16 and 24 MHz | Plays in every combination tried | 0.6.0 debug build |
+| The King of Fighters '99 | CD/CDZ on and off, CD Turbo 4x on and off, 12, 16 and 24 MHz | Plays in every combination tried | 0.6.0 test build |
 | Metal Slug | CD/CDZ off | Works | 0.4.0 |
 | Metal Slug 2 | CD/CDZ on | Plays, sounds fine. Slower under heavy load than on the cartridge core | 0.5.1 |
 | Samurai Shodown RPG | CD/CDZ on and off | Loads on the first Start Game, up to the fight after choosing a character | 0.5.1 |
@@ -123,7 +123,7 @@ All with `uni-bioscd.rom`.
 | Twinkle Star Sprites | CD/CDZ on | Plays, sounds fine | 0.5.1 |
 | Aero Fighters 3 | CD/CDZ on | Plays, sounds fine | 0.5.1 |
 | Pulstar | CD/CDZ on | Works | 0.5.1 |
-| Fatal Fury 3 | CD/CDZ on, CD Turbo 4x on, 12 and 24 MHz | Works. Its black screens after "Fight" are the game's own, as the [manual](docs/manual.md#things-a-game-does-that-look-like-faults) explains | 0.6.0 debug build |
+| Fatal Fury 3 | CD/CDZ on, CD Turbo 4x on, 12 and 24 MHz | Works. Its black screens after "Fight" are the game's own, as the [manual](docs/manual.md#things-a-game-does-that-look-like-faults) explains | 0.6.0 test build |
 
 Metal Slug and Metal Slug 2 feel slower on CD than on the cartridge core, and their music and sound differ slightly.
 
@@ -134,7 +134,7 @@ Slug X (first mission), The King of Fighters '98, The King of Fighters 2003, Gar
 fight), Samurai Shodown V Special (two fights), The Super Spy and Art of Fighting (jukebox with stereo). Also changing
 AES/MVS both ways with a game running, PAL on and off, the second player's coin and Reset Core.
 
-On a debug build of 0.6.0, with the 68K Clock at 24 MHz: Metal Slug 2, Metal Slug 3, Metal Slug X, The King of Fighters
+On a test build of 0.6.0, with the 68K Clock at 24 MHz: Metal Slug 2, Metal Slug 3, Metal Slug X, The King of Fighters
 '94, Fatal Fury 3 and Samurai Shodown V Special, with no fault in the picture reported.
 
 Every run is in [docs/hw-tests.md](docs/hw-tests.md), the project's log of hardware tests.
@@ -156,8 +156,6 @@ Every run is in [docs/hw-tests.md](docs/hw-tests.md), the project's log of hardw
   them at 2x: Samurai Shodown RPG builds its file list that way, and at 4x it lost names and loaded from the wrong place.
 - A read of the SD card can take around 450 ms. It slows a load, and in simulation it leaves a silent gap in the disc's
   music. The console does not pause for it.
-- Brief cuts in the music were heard on a debug build, which also writes a file of counters to the SD card every 7
-  seconds. They have not been reported on a release build.
 - The CD core reports no disc for a CUE of more than 9,408 bytes, a CUE with a second `FILE`, a `WAVE` file or a
   `MODE1/2048` track, an ISO of 2,048-byte sectors, and a BIN that is not beside its CUE. The disc converter attached to
   each release converts those.
@@ -204,9 +202,6 @@ Quartus build, with Quartus Prime Lite 25.1 and a check of the logic and memory 
 
     python tools/build.py neogeo       # or neogeocd
     python tools/package.py neogeo <version>
-
-`neogeo_debug` and `neogeocd_debug` build the debug versions, which write counters to `waitt.sav` for
-`tools/check_wait_save.py` to read.
 
 ## License
 

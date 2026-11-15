@@ -1,8 +1,8 @@
 # Hardware tests
 
 All results come from one Analogue Pocket in 2026-11, as reported by its owner, with the date where it is known. The 0.6.0 tests
-ran on firmware 2.7; the earlier ones did not record it. The debug cores add a 68K wait counter, read on a PC with
-`tools/check_wait_save.py`.
+ran on firmware 2.7; the earlier ones did not record it. The counter figures come from a 68K wait counter used in
+development, which is not part of the released cores.
 
 ## Memory test core
 
@@ -50,7 +50,7 @@ Metal Slug 3's save works in MVS and AES modes, left with Quit (2026-11-09).
 
 ### NeoMillie 0.6.0, 2026-11-14
 
-The owner played these games on a debug build of 0.6.0 with the 68K Clock at 24 MHz and reported no fault in the picture:
+The owner played these games on a test build of 0.6.0 with the 68K Clock at 24 MHz and reported no fault in the picture:
 Metal Slug X, Metal Slug 3, Metal Slug 2, The King of Fighters '94, Fatal Fury 3, Samurai Shodown V Special and Neo Fight.
 Metal Slug 3 is the first game with the NEO-SMA chip run since the chip's bank switch began to take its registered write data.
 In the counter's eight runs, all at 24 MHz, frames with no idle 68K cycle are 0.25% to 0.45% of a run of play.
@@ -108,7 +108,7 @@ With `top-sp1.bin` and no disc, the 68K wait counter over about 4 minutes: 13,89
 
 ### NeoMillieCD 0.6.0, 2026-11-13 to 15
 
-On debug builds of 0.6.0, with `uni-bioscd.rom`. Seven loads of The King of Fighters '99 added up, timed by the core:
+On test builds of 0.6.0, with `uni-bioscd.rom`. Seven loads of The King of Fighters '99 added up, timed by the core:
 
 | CD/CDZ | CD Turbo 4x | 68K Clock | Seven loads | Failed sectors |
 |---|---|---|---|---|
