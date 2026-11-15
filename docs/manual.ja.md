@@ -167,6 +167,8 @@ Reset Core、CD/CDZ、CD Turbo 4x、68K Clock を変更すると、ゲームが�
 | macOS (Apple Silicon) | `NeoMillieCD-Converter-macos-arm64.zip` |
 | Linux x64 | `NeoMillieCD-Converter-linux-x64.zip` |
 
+どのプログラムも単体で動きます。PyInstaller で作られており、Python のインタープリター、ウィンドウを描く Tcl/Tk、そして Python が使う OpenSSL、zlib、bzip2、xz などのライブラリを中に含んでいます。Linux 版には、ウィンドウに必要な X11、fontconfig、FreeType のライブラリも入っています。何もインストールせずに使えるため、zip の大きさは 10 から 25 MB になります (スクリプトだけなら 56 KB です)。ffmpeg と chdman は含まれていません。[ffmpeg と chdman](#ffmpeg-と-chdman) を参照してください。中に含まれるものすべてのライセンスは、各 zip の `THIRD-PARTY-LICENSES.txt` にあります。
+
 プログラムには署名がありません。初回は Windows SmartScreen が確認を求めるので、*More info* を選び、次に *Run anyway* を選んでください。macOS では、アプリを一度開き、確認できないというメッセージを閉じてから、システム設定のプライバシーとセキュリティで *Open Anyway* を選んでください。Intel 搭載の Mac 用のビルドはないので、下のスクリプトを Python で使ってください。
 
 #### 手順

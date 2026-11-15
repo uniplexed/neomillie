@@ -221,6 +221,13 @@ Téléchargez le fichier zip pour votre système et décompressez-le :
 | macOS sur Apple Silicon | `NeoMillieCD-Converter-macos-arm64.zip` |
 | Linux x64 | `NeoMillieCD-Converter-linux-x64.zip` |
 
+Chaque programme est autonome. Il est construit avec PyInstaller et embarque son propre interpréteur Python, la boîte à
+outils Tcl/Tk qui dessine la fenêtre et les bibliothèques dont Python se sert, comme OpenSSL, zlib, bzip2 et xz. Celui
+pour Linux embarque en plus les bibliothèques X11, fontconfig et FreeType dont la fenêtre a besoin. Il n'y a rien à
+installer pour s'en servir, c'est pourquoi chaque zip pèse entre 10 et 25 Mo, contre 56 Ko pour les scripts. ffmpeg et
+chdman ne sont pas inclus : voir [ffmpeg et chdman](#ffmpeg-et-chdman). Les licences de tout ce qu'ils contiennent sont
+dans `THIRD-PARTY-LICENSES.txt`, dans chaque zip.
+
 Les programmes ne sont pas signés. La première fois, Windows SmartScreen pose la question : choisissez *More info*, puis
 *Run anyway*. Sur macOS, ouvrez l'app une fois, fermez le message indiquant qu'elle ne peut pas être vérifiée, puis dans
 Réglages Système, Confidentialité et sécurité, choisissez *Open Anyway*. Il n'y a pas de version pour les Mac Intel :

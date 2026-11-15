@@ -70,6 +70,10 @@ big-endian or compressed audio, and CloneCD, Alcohol 120%, Nero, DiscJuggler and
 a time. A failed or cancelled disc leaves nothing behind, and a disc already converted is skipped unless you ask to
 overwrite it.
 
+The window programs are self-contained PyInstaller builds: each carries its own Python, the Tcl/Tk toolkit for the
+window and the libraries they use, so nothing has to be installed, which makes each zip 10 to 25 MB. Their licences come
+in each zip, in `THIRD-PARTY-LICENSES.txt`.
+
 ![The NeoMillieCD Converter converting a folder of discs](docs/img/converter-step4-converting.png)
 
 ### Earlier versions

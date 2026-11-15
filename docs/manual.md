@@ -211,6 +211,12 @@ Download the zip for your system and unzip it:
 | macOS on Apple Silicon | `NeoMillieCD-Converter-macos-arm64.zip` |
 | Linux x64 | `NeoMillieCD-Converter-linux-x64.zip` |
 
+Each program is self-contained. It is built with PyInstaller and carries its own Python interpreter, the Tcl/Tk toolkit
+that draws the window, and the libraries Python uses, such as OpenSSL, zlib, bzip2 and xz. The Linux program also
+carries the X11, fontconfig and FreeType libraries the window needs. You install nothing to run it, which is why each
+zip is 10 to 25 MB, against 56 KB for the scripts. ffmpeg and chdman are not inside: see [ffmpeg and
+chdman](#ffmpeg-and-chdman). The licences of everything inside are in `THIRD-PARTY-LICENSES.txt`, in each zip.
+
 The programs are not signed. The first time, Windows SmartScreen asks: choose *More info*, then *Run anyway*. On macOS,
 open the app once, close the message that it cannot be checked, then in System Settings, Privacy & Security, choose
 *Open Anyway*. There is no build for Intel Macs: use the script below with Python.
