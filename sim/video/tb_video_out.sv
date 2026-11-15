@@ -22,7 +22,9 @@ module vo_case #(
     parameter int         PHASE = 0,
     parameter bit         PAL   = 0,
     parameter bit         W320  = 1,
-    parameter bit [2:0]   SLOT  = 3'd5
+    parameter bit [2:0]   SLOT  = 3'd5,
+    parameter int         XS    = 0,
+    parameter int         YS    = 0
 ) (
     input  wire         clk48,
     input  wire         clk_pix,
@@ -60,7 +62,7 @@ module vo_case #(
     video_out dut (
         .rst(rst), .CLK_48M(clk48), .ce_pix(ce_pix), .r(r), .g(g), .b(b),
         .hs(hs), .vs(vs), .hblank(hblank), .vblank(vblank),
-        .width320(W320), .slot(SLOT), .pal(PAL),
+        .width320(W320), .slot(SLOT), .pal(PAL), .x_off(8'(XS)), .y_off(8'(YS)),
         .CLK_PIX(clk_pix), .CLK_PIX_90(clk_pix90),
         .video_rgb(video_rgb), .video_rgb_clock(rgb_clk), .video_rgb_clock_90(rgb_clk90),
         .video_de(de), .video_hs(vhs), .video_vs(vvs), .video_skip(skip), .fifo_err(fifo_err)
@@ -91,7 +93,7 @@ module vo_case #(
         if (fifo_err) e_fifo <= e_fifo + 1;
         if (vvs && !prev_vs) begin
             if (armed) frame_end();
-            armed  <= 1;
+            armed  <= YS <= 0 || frames >= 1;   // a window that opens before vblank falls has no count until the first fall
             frames <= frames + 1;
             lc     <= 0;
             slots  <= 0;
@@ -104,7 +106,12 @@ module vo_case #(
         if (armed) begin
             if (vhs && !prev_hs) hs_n <= hs_n + 1;
             if (de) begin
-                if (video_rgb !== px(hc + XOFF, lc + YOFF)) e_pix <= e_pix + 1;
+                begin
+                    // The window moves against the picture: what it takes from the blanking is black
+                    automatic int col = hc + XOFF - XS, row = lc + YOFF - YS;
+                    automatic logic [23:0] want = col >= 0 && col < 320 && row >= 0 && row < (PAL ? 256 : 224) ? px(col, row) : 24'd0;
+                    if (video_rgb !== want) e_pix <= e_pix + 1;
+                end
                 hc <= hc + 1;
             end else begin
                 if (prev_de) begin
@@ -135,18 +142,20 @@ module tb_video_out;
     wire clk_pix90;
     assign #(PIX_HALF / 2) clk_pix90 = clk_pix;
 
-    localparam int N = 18;
-    // case i: 0-7 NTSC 320 at phases 0-7, 8-15 PAL 304 at phases 0-7, 16 NTSC 304, 17 PAL 320
-    function automatic bit c_pal(input int i);  return (i >= 8 && i < 16) || i == 17; endfunction
-    function automatic bit c_w320(input int i); return i < 8 || i == 17; endfunction
+    localparam int N = 20;
+    // case i: 0-7 NTSC 320 at phases 0-7, 8-15 PAL 304 at phases 0-7, 16 NTSC 304, 17 PAL 320, 18 and 19 moved on the screen
+    function automatic bit c_pal(input int i);  return (i >= 8 && i < 16) || i == 17 || i == 19; endfunction
+    function automatic bit c_w320(input int i); return i < 8 || i == 17 || i == 18; endfunction
 
     logic [N-1:0] done;
     int e_win[N], e_pix[N], e_slot[N], e_sync[N], e_fifo[N], e_clk[N];
     for (genvar i = 0; i < N; i++) begin : g
         localparam int PH = i < 16 ? i % 8 : (i == 16 ? 3 : 5);
+        localparam int XS = i == 18 ? 4 : i == 19 ? -4 : 0;
+        localparam int YS = i == 18 ? 4 : i == 19 ? -3 : 0;
         localparam bit PL = c_pal(i);
         localparam bit WD = c_w320(i);
-        vo_case #(.PHASE(PH), .PAL(PL), .W320(WD), .SLOT(WD ? 3'd4 + 3'(i % 4) : 3'(i % 4))) c (
+        vo_case #(.PHASE(PH), .PAL(PL), .W320(WD), .SLOT(WD ? 3'd4 + 3'(i % 4) : 3'(i % 4)), .XS(XS), .YS(YS)) c (
             .clk48(clk48), .clk_pix(clk_pix), .clk_pix90(clk_pix90), .rst(rst), .done(done[i]),
             .e_win(e_win[i]), .e_pix(e_pix[i]), .e_slot(e_slot[i]), .e_sync(e_sync[i]),
             .e_fifo(e_fifo[i]), .e_clk(e_clk[i])

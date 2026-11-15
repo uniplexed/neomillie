@@ -17,3 +17,64 @@ This project builds on the work of the following authors.
 | `fix_convert`, `spr_convert_dbl` of `neogeo_loader.cpp` | MiSTer-devel, Main_MiSTer | The two ROM conversions, done in hardware in `rtl/pocket/apf_loader.sv` |
 | `openfpga-megacd` (Pocket Mega CD) | neutralinsomniac | Design reference only, no code copied: the repository has no licence file. Read for the APF target-command state machine's shape (`megacd_top.sv:470-582`), a bank of four sectors at bridge `0x7000_{slot}000`, the `deferload` slots (`parameters` `0x9` for the picked disc, `0x8` for the hidden data slot), the openfile parameter struct (path bytes, then flags word, then size word), the getfile response (NUL-terminated path), a binary search of reads for a BIN's size, the lesson that a read completed by the watchdog must never validate a bank slot, and that openfile is refused outside `/Assets/<platform>/` and `/Saves/<platform>/`. `synth/neocd_delta/megacd_cdd.qsf` compiles its `megacd_cdd_drive.sv` from a local clone, only to compare sizes (`docs/hw-tests.md`); it is in no build of these cores |
 | APF framework, core template v1.3.0 (`core_top.v` port list, tie-offs and host command wiring; `core_bridge_cmd.v`; the pin map in `synth/pocket_common.qsf`) | Analogue | Used under Analogue's own EULA, which the headers of the template's `src/fpga/apf/*.v` name. A submodule. The header of `rtl/top/core_top.v` says which part of that file is the template's |
+| ECM 1.0 | Neill Corlett | The EDC and ECC code of `tools/cdconv/disc.py` follows it. Copyright (C) 2002 Neill Corlett, GPL version 2 or (at your option) any later version, used under version 3 or later |
+| Disc image layouts: cdirip 0.6.3 (DeXT), Aaru, libmirage, MAME's `cdrom.cpp`, libcdio, nrgrip, Mednafen, Yabause | their authors | Read for the CloneCD, Alcohol 120%, Nero and DiscJuggler file layouts that `tools/cdconv/` reads. No code of theirs is used |
+| Python, PyInstaller, Tcl/Tk, OpenSSL and the other libraries inside the converter programs | their authors | Carried inside `NeoMillieCD-Converter-windows-x64`, `-macos-arm64` and `-linux-x64`. Each zip has their licences in `THIRD-PARTY-LICENSES.txt`, made by `tools/third_party_licenses.py` from `tools/licenses/third-party.txt` and the build system's own files |
+
+## The T80 licence
+
+The cores' bitstreams contain T80, whose licence asks for its notice in the materials that come with them. This is the header of `T80.vhd`, as the other T80 files carry it:
+
+```
+****
+T80(c) core. Attempt to finish all undocumented features and provide
+             accurate timings.
+Version 350.
+Copyright (c) 2018 Sorgelig
+ Test passed: ZEXDOC, ZEXALL, Z80Full(*), Z80memptr
+ (*) Currently only SCF and CCF instructions aren't passed X/Y flags check as
+     correct implementation is still unclear.
+
+****
+T80(b) core. In an effort to merge and maintain bug fixes ....
+
+Ver 303 add undocumented DDCB and FDCB opcodes by TobiFlex 20.04.2010
+Ver 301 parity flag is just parity for 8080, also overflow for Z80, by Sean Riddle
+Ver 300 started tidyup.
+
+MikeJ March 2005
+Latest version from www.fpgaarcade.com (original www.opencores.org)
+
+****
+Z80 compatible microprocessor core
+
+Version : 0250
+Copyright (c) 2001-2002 Daniel Wallner (jesus@opencores.org)
+All rights reserved
+
+Redistribution and use in source and synthezised forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.
+
+Redistributions in synthesized form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+Neither the name of the author nor the names of other contributors may
+be used to endorse or promote products derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+```

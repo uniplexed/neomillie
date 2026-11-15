@@ -54,29 +54,38 @@
                 ]
             },
             {
-                "name": "CD Speed",
-                "id": 4,
+                "name": "CD Turbo 4x (beta)",
+                "id": 17,
+                "type": "check",
+                "enabled": true,
+                "persist": true,
+                "address": "0xF0000614",
+                "defaultval": 0,
+                "value": "0x1",
+                "value_off": "0x0",
+                "mask": "0xFFFFFFFE"
+            },
+            {
+                "name": "68K Clock",
+                "id": 15,
                 "type": "list",
                 "enabled": true,
-                "address": "0xF0000608",
+                "persist": true,
+                "address": "0xF0000110",
                 "defaultval": 0,
                 "mask": "0xFFFFFFFC",
                 "options": [
                     {
                         "value": 0,
-                        "name": "1x"
+                        "name": "12 MHz (original)"
                     },
                     {
                         "value": 1,
-                        "name": "2x"
+                        "name": "16 MHz"
                     },
                     {
                         "value": 2,
-                        "name": "3x"
-                    },
-                    {
-                        "value": 3,
-                        "name": "4x"
+                        "name": "24 MHz"
                     }
                 ]
             },
@@ -86,6 +95,18 @@
                 "type": "check",
                 "enabled": true,
                 "address": "0xF000060C",
+                "defaultval": 0,
+                "value": "0x1",
+                "value_off": "0x0",
+                "mask": "0xFFFFFFFE"
+            },
+            {
+                "name": "PAL Output",
+                "id": 13,
+                "type": "check",
+                "enabled": true,
+                "persist": true,
+                "address": "0xF0000200",
                 "defaultval": 0,
                 "value": "0x1",
                 "value_off": "0x0",
@@ -128,6 +149,230 @@
                     {
                         "value": 3,
                         "name": "Dock Widescreen 16:9"
+                    }
+                ]
+            },
+            {
+                "name": "Screen X Position",
+                "id": 8,
+                "type": "slider_u32",
+                "enabled": true,
+                "persist": true,
+                "address": "0xF0000204",
+                "mask": "0x00000000",
+                "graphical": {
+                    "defaultval": 0,
+                    "signed": true,
+                    "min": -32,
+                    "max": 32,
+                    "adjust_small": 1,
+                    "adjust_large": 4
+                }
+            },
+            {
+                "name": "Screen Y Position",
+                "id": 9,
+                "type": "slider_u32",
+                "enabled": true,
+                "persist": true,
+                "address": "0xF0000208",
+                "mask": "0x00000000",
+                "graphical": {
+                    "defaultval": 0,
+                    "signed": true,
+                    "min": -16,
+                    "max": 16,
+                    "adjust_small": 1,
+                    "adjust_large": 4
+                }
+            },
+            {
+                "name": "Stereo Mix",
+                "id": 10,
+                "type": "list",
+                "enabled": true,
+                "persist": true,
+                "address": "0xF0000318",
+                "defaultval": 0,
+                "mask": "0xFFFFFFFC",
+                "options": [
+                    {
+                        "value": 0,
+                        "name": "None"
+                    },
+                    {
+                        "value": 1,
+                        "name": "25%"
+                    },
+                    {
+                        "value": 2,
+                        "name": "50%"
+                    },
+                    {
+                        "value": 3,
+                        "name": "100% (mono)"
+                    }
+                ]
+            },
+            {
+                "name": "Mute",
+                "id": 11,
+                "type": "list",
+                "enabled": true,
+                "address": "0xF0000304",
+                "defaultval": 0,
+                "mask": "0xFFFFFFF0",
+                "options": [
+                    {
+                        "value": 0,
+                        "name": "None"
+                    },
+                    {
+                        "value": 1,
+                        "name": "FM"
+                    },
+                    {
+                        "value": 2,
+                        "name": "A"
+                    },
+                    {
+                        "value": 3,
+                        "name": "FM+A"
+                    },
+                    {
+                        "value": 4,
+                        "name": "B"
+                    },
+                    {
+                        "value": 5,
+                        "name": "FM+B"
+                    },
+                    {
+                        "value": 6,
+                        "name": "A+B"
+                    },
+                    {
+                        "value": 7,
+                        "name": "FM+A+B"
+                    },
+                    {
+                        "value": 8,
+                        "name": "PSG"
+                    },
+                    {
+                        "value": 9,
+                        "name": "FM+PSG"
+                    },
+                    {
+                        "value": 10,
+                        "name": "A+PSG"
+                    },
+                    {
+                        "value": 11,
+                        "name": "FM+A+PSG"
+                    },
+                    {
+                        "value": 12,
+                        "name": "B+PSG"
+                    },
+                    {
+                        "value": 13,
+                        "name": "FM+B+PSG"
+                    },
+                    {
+                        "value": 14,
+                        "name": "A+B+PSG"
+                    },
+                    {
+                        "value": 15,
+                        "name": "FM+A+B+PSG"
+                    }
+                ]
+            },
+            {
+                "name": "ADPCM-A Channel",
+                "id": 12,
+                "type": "list",
+                "enabled": true,
+                "address": "0xF0000300",
+                "defaultval": 0,
+                "mask": "0xFFFFFFC0",
+                "options": [
+                    {
+                        "value": 0,
+                        "name": "None"
+                    },
+                    {
+                        "value": 1,
+                        "name": "Mute 1"
+                    },
+                    {
+                        "value": 2,
+                        "name": "Mute 2"
+                    },
+                    {
+                        "value": 4,
+                        "name": "Mute 3"
+                    },
+                    {
+                        "value": 8,
+                        "name": "Mute 4"
+                    },
+                    {
+                        "value": 16,
+                        "name": "Mute 5"
+                    },
+                    {
+                        "value": 32,
+                        "name": "Mute 6"
+                    },
+                    {
+                        "value": 62,
+                        "name": "Solo 1"
+                    },
+                    {
+                        "value": 61,
+                        "name": "Solo 2"
+                    },
+                    {
+                        "value": 59,
+                        "name": "Solo 3"
+                    },
+                    {
+                        "value": 55,
+                        "name": "Solo 4"
+                    },
+                    {
+                        "value": 47,
+                        "name": "Solo 5"
+                    },
+                    {
+                        "value": 31,
+                        "name": "Solo 6"
+                    }
+                ]
+            },
+            {
+                "name": "L/R Buttons",
+                "id": 16,
+                "type": "list",
+                "enabled": true,
+                "persist": true,
+                "address": "0xF0000118",
+                "defaultval": 0,
+                "mask": "0xFFFFFFFC",
+                "options": [
+                    {
+                        "value": 0,
+                        "name": "A+B / C+D"
+                    },
+                    {
+                        "value": 1,
+                        "name": "ABC / C+D"
+                    },
+                    {
+                        "value": 2,
+                        "name": "A+B / ABC"
                     }
                 ]
             }

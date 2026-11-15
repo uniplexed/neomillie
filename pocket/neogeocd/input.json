@@ -3,8 +3,8 @@
         "magic": "APF_VER_1",
         "controllers": [
             {
-            "type": "default",
-              "mappings": [
+                "type": "default",
+                "mappings": [
                     {
                         "id": 0,
                         "name": "Pad 1 Button A",
@@ -34,6 +34,16 @@
                         "id": 5,
                         "name": "Pad 1 Select",
                         "key": "pad_btn_select"
+                    },
+                    {
+                        "id": 6,
+                        "name": "Pad 1 L (A+B/ABC)",
+                        "key": "pad_trig_l"
+                    },
+                    {
+                        "id": 7,
+                        "name": "Pad 1 R (C+D/ABC)",
+                        "key": "pad_trig_r"
                     }
                 ]
             }

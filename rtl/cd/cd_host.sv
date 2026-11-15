@@ -17,7 +17,7 @@
 //   mount (clk_74a)   mr_req is a level held until mr_done; mr_done stays high until mr_req falls, so a
 //                     request is never taken twice. mr_err is the command's target_dataslot_err.
 //   fetch (CLK_48M)   fr_req toggles, one request outstanding; fr_done takes the value fr_req had when the
-//                     request was taken, once the read is over, and fr_err is set before. fr_slot, fr_offset and fr_bank_slot are held from the toggle to fr_done.
+//                     request was taken, once the read is over, and fr_err is set before. fr_slot, fr_offset, fr_bridge and fr_len are held from the toggle to fr_done.
 //   wait (clk_74a)    ws_req is the wait counter's save_now: each rising edge asks for one write of slot
 //                     0x103, offset 0, from 0x8000_0000, 4,096 bytes; ws_done pulses at its end, with ws_err.
 // Order when idle: the fetch, unless a mount openfile is also pending (an openfile goes first and is never
@@ -29,7 +29,7 @@
 // once done has fallen. done is high between commands, so "low, then high" is this command's answer.
 // core_bridge_cmd has no reset: rst must not rise with a command in flight (core_top.v ties it low).
 //
-// Sector bank: 4 slots x 588 words in one M10K RAM of 2,352 words, linear: slot s word w is s * 588 + w,
+// Sector bank: 6 slots x 588 words in one M10K RAM of 3,528 words, linear: slot s word w is s * 588 + w,
 // which is what bank_rd_addr and bank_rd_addr_74 take. The host writes slot s at bridge 0x7000_s000 + 4w,
 // a word {b0, b1, b2, b3} as the bridge carries it (bridge_endian_little = 0). Port A (clk_74a) takes the
 // host's writes and cd_mount's reads, a write first: bank_rd_q_74 is the word of bank_rd_addr_74 one clock
@@ -45,7 +45,7 @@
 // The bridge reads 0x7100_0000-0x01FF here, loaded on the strobe like core_bridge_cmd.v (bridge_bfm.sv: the host
 // allows for a one-read lag); core_top.v muxes 0x71 to this module.
 //
-// Clock crossings: fr_req, CLK_48M to clk_74a, two flops; fr_slot, fr_offset, fr_bank_slot are sampled
+// Clock crossings: fr_req, CLK_48M to clk_74a, two flops; fr_slot, fr_offset, fr_bridge, fr_len are sampled
 // after it and held by the client. fr_done, clk_74a to CLK_48M, two flops; fr_err is set a clock before
 // fr_done toggles and held until the next request. bank port B is a dual-clock RAM read.
 module cd_host (
@@ -87,7 +87,8 @@ module cd_host (
     input             fr_req,
     input      [15:0] fr_slot,
     input      [31:0] fr_offset,
-    input       [1:0] fr_bank_slot,
+    input      [31:0] fr_bridge,        // bridge address the data goes to
+    input      [31:0] fr_len,           // bytes to read
     output            fr_done,
     output            fr_err,
 `ifdef NEOGEO_WAIT_COUNTER
@@ -146,17 +147,12 @@ wire mount_open    = mount_pending && mr_kind == K_OPENFILE;
 
 assign rs_free = state == S_IDLE;
 
-function automatic [11:0] slot_base(input [1:0] slot);     // slot * 588
-    case (slot)
-        2'd0: return 12'd0;
-        2'd1: return 12'd588;
-        2'd2: return 12'd1176;
-        default: return 12'd1764;
-    endcase
+function automatic [11:0] slot_base(input [2:0] slot);     // slot * 588
+    return 12'(slot) * 12'd588;
 endfunction
 
-function automatic [31:0] bank_bridge(input [1:0] slot);
-    return 32'h7000_0000 | {18'd0, slot, 12'd0};
+function automatic [31:0] bank_bridge(input [2:0] slot);
+    return 32'h7000_0000 | {17'd0, slot, 12'd0};
 endfunction
 
 always @(posedge clk_74a) begin
@@ -176,8 +172,8 @@ always @(posedge clk_74a) begin
                 kind                       <= K_READ;
                 target_dataslot_id         <= fr_slot;
                 target_dataslot_slotoffset <= fr_offset;
-                target_dataslot_bridgeaddr <= bank_bridge(fr_bank_slot);
-                target_dataslot_length     <= SECTOR;
+                target_dataslot_bridgeaddr <= fr_bridge;
+                target_dataslot_length     <= fr_len;
                 state                      <= S_ISSUE;
             end
             else if (mount_pending) begin
@@ -185,7 +181,7 @@ always @(posedge clk_74a) begin
                 kind                       <= mr_kind == 2'd3 ? K_READ : mr_kind;
                 target_dataslot_id         <= mr_slot;
                 target_dataslot_slotoffset <= mr_offset;
-                target_dataslot_bridgeaddr <= bank_bridge(mr_bank_slot);
+                target_dataslot_bridgeaddr <= bank_bridge({1'b0, mr_bank_slot});
                 target_dataslot_length     <= mr_len;
                 state                      <= S_ISSUE;
             end
@@ -265,19 +261,19 @@ reg [11:0] bank_wa = 0;
 reg [31:0] bank_wd = 0;
 
 wire [9:0] b_word = b_addr[11:2];
-wire [1:0] b_slot = b_addr[13:12];
+wire [2:0] b_slot = b_addr[14:12];
 
 always @(posedge clk_74a) begin
     b_wr    <= bridge_wr;
     b_addr  <= bridge_addr;
     b_data  <= bridge_wr_data;
-    bank_we <= b_wr && b_addr[31:14] == 18'h1_C000 && b_word < 10'(WORDS);   // 0x7000_0000-0x7000_3FFF
+    bank_we <= b_wr && b_addr[31:15] == 17'h0_E000 && b_slot < 3'd6 && b_word < 10'(WORDS);   // 0x7000_0000-0x7000_5FFF
     bank_wa <= slot_base(b_slot) + 12'(b_word);
     bank_wd <= b_data;
 end
 
 // ---- Sector bank ----
-(* ramstyle = "M10K, no_rw_check" *) reg [31:0] bank [0:4 * WORDS - 1];
+(* ramstyle = "M10K, no_rw_check" *) reg [31:0] bank [0:6 * WORDS - 1];
 
 // One address on this port: with two, a write's and a read's, Quartus makes two RAMs, 20 M10K for 10
 wire [11:0] bank_a = bank_we ? bank_wa : bank_rd_addr_74;

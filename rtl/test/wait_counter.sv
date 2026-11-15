@@ -33,7 +33,13 @@
 // 512 bytes. The checker still reads layouts 1 and 2, of 256, from older files.
 //    0 magic, 1 {RD_WAIT, C1 wait setting, layout}, 2 frames, 3 worst frame's lost clocks,
 //    4 total clocks (hi, lo), 6 reads by code (4 x hi, lo), 14 lost clocks by code (4 x hi, lo),
-//   22 frames again, 31 {last error of a save, saves done}, 48-63 and 127 counting pattern for the read lag
+//   22 frames again, 31 {last error of a save, saves done}, 57-59 and 127 counting pattern for the read lag (53-63 up to
+//   revision 9, 48-63 up to revision 8)
+// Words 53 to 56 and 60 to 63, both builds, from revision 10: the last 8 runs of dark frames or of frames with a layer off,
+//   newest first, see below
+// Words 48 to 52, both builds, from revision 9: the 68K's clock and its idle loops, see below:
+//   48 {cpu_clock at the last frame: 0 12 MHz, 1 16, 2 and 3 24; the CD build; 29'd0}, 49 idle bus cycles / 256,
+//   50 busy frames, 51 {the longest run of busy frames in a row, 16'd0}, 52 bus cycles / 256
 // Words 23 to 30, to see how far the BIOS got without a screen to look at:
 //   23 {writes to FIX: 24 bits, the last CDD_COMMAND_DATA's hi 8 bits}, 24 its lo,
 //   25 {writes to SPR: 24 bits, the last CDD_STATUS's hi 8 bits}, 26 its lo,
@@ -73,7 +79,8 @@
 // not done on a hard power off or a hang, the core also asks for a slot write (0x0184) about every 7 s, and
 // when nRESET falls with the core running, as Reset Core is what follows a failure.
 module wait_counter #(
-    parameter [7:0]  RD_WAIT = 8
+    parameter [7:0]  RD_WAIT = 8,
+    parameter bit    CD = 1             // 0 in the cart build: no load log, and the file says which build wrote it
 ) (
     input             clk_48m,
     input             nRESET,
@@ -97,6 +104,7 @@ module wait_counter #(
     input     [113:0] cdd,          // CLK_48M: {fetch_err; writes Z80, PCM, SPR, FIX; status latch; cur_lba; cur_status; status; command}
     input      [31:0] disc_bin_size,// clk_74a: static once the disc is mounted
     input       [3:0] disc_reason,  // clk_74a: likewise
+    input     [383:0] open_log,     // clk_74a: cd_mount's dbg_open, likewise; in the file up to revision 10
     input      [53:0] cd2,        // neogeo_pocket.sv's dbg_cd2, CLK_48M and CLK_96M, the same PLL
     input     [319:0] fetch,        // cd_fetch.sv's dbg_fetch, CLK_48M
     input     [383:0] dma,          // pocket_mem_mux.sv's dbg_dma, CLK_96M, the same PLL
@@ -104,7 +112,11 @@ module wait_counter #(
     input      [48:0] dmab,         // CLK_48M: {DMA running, DMA write to PROG RAM, DMA read from PROG RAM,
                                     //   DMA_ADDR_OUT[23:1], DMA_ADDR_IN[23:1]}
     input      [17:0] bus68,        // CLK_48M: {nUDS, nLDS, the 68K's write data}
-    input      [25:0] dreq          // CLK_48M: the drive's request of a sector: {toggle, audio, LBA}
+    input      [25:0] dreq,         // CLK_48M: the drive's request of a sector: {toggle, audio, LBA}
+    input     [127:0] rcnt,         // CLK_48M: cd_ring.sv's dbg_ring, 0 with Turbo off
+    input      [25:0] ovc,          // CLK_48M, both builds: {cpu_clock, M68K_RW, M68K_ADDR[23:1]}
+    input       [4:0] vid           // CLK_48M, both builds: {a visible pixel that is not black, one clock each; visible; the CD's
+                                    //   video off (FF0119), FIX off (FF0115), SPR off (FF0111)}
 );
 
 localparam [31:0] MAGIC = 32'h4E47_5754;    // NGWT
@@ -114,8 +126,12 @@ localparam [6:0]  WORDS = 7'd127;
 // Word 1 bits 23:19: what words 106-126 hold. 0 up to 0.5.3: the hold's times and its run-outs; 1 (0.5.4): the
 // sectors and the last lost; 2 (0.5.5): the sectors, and the reads of PROG RAM ahead of any write since the reset; 3: the
 // CDZ BIOS's protection variables (0.5.6 first build); 4: the BIOS's sector read variables and the last sector offered;
-// 5: the BIOS's command queue and read variables up to the music's PLAY; 6: an event timeline per CD/CDZ setting, past the records
-localparam [4:0]  REV = 5'd6;
+// 5: the BIOS's command queue and read variables up to the music's PLAY; 6: an event timeline per CD/CDZ setting, past the records;
+// 7: as 6, and words 110-121 the times of cd_mount's openfile test; 8: as 7, and words 122-125 cd_ring's counters (Turbo 4x);
+// 9: a load log in the file's second 4 KB, replacing the timelines; 10: as 9, and the dark frames in words 53-56 and 60-63;
+// 11: as 10, and words 110-121 the last two runs of frames with a layer off, where the openfile test's times were;
+// 12: as 11, the load log keeps 127 entries, and the words after it are a trace of the drive and the decoder in a load
+localparam [4:0]  REV = 5'd12;
 localparam int    ADDR_W = 10;    // 8 records of 128 words
 
 // ---- The sums, CLK_48M. Same rules as the bench's monitor, sim/top/tb_top.sv ----
@@ -158,10 +174,76 @@ always @(posedge clk_48m) begin
     end
 end
 
+// ---- The 68K's clock setting and its idle loops, both builds ----
+// A bus cycle, of any zone, is idle when the 68K is in a tight loop: for a period P of 2 to 8 cycles, it and at least the
+// 2P - 1 cycles before it each had the address of the cycle P before. A wait-for-VBlank loop repeats every address, so it
+// is idle; a copy loop repeats its fetches but not its data addresses, so it is not. A busy frame had no idle cycle: the
+// game's frame did not end in time, which is what a faster 68K should make rarer.
+reg  [22:0]      o_a = 0;
+reg  [7:0][22:0] o_hist = 0;            // [0] the last cycle's address, [P - 1] the one P cycles back
+reg  [6:0][4:0]  o_run = 0;             // [P - 2]: cycles in a row with the address of P back, up to 31
+reg  [39:0]      n_cyc = 0, n_idle = 0;
+reg  [31:0]      n_busy = 0;
+reg  [15:0]      streak = 0, longest = 0;
+reg              frame_idle = 0;
+wire             o_end = nRESET & in_cycle & nAS;
+reg              o_idle;
+always @* begin
+    o_idle = 0;
+    for (int p = 2; p <= 8; p++) if (o_a == o_hist[p - 1] && o_run[p - 2] >= 5'(2 * p - 1)) o_idle = 1;
+end
+
+always @(posedge clk_48m) begin
+    if (!nAS) o_a <= ovc[22:0];
+    if (o_end) begin
+        o_hist <= {o_hist[6:0], o_a};
+        for (int p = 2; p <= 8; p++) o_run[p - 2] <= o_a != o_hist[p - 1] ? 5'd0 : o_run[p - 2] + 5'(o_run[p - 2] != 5'd31);
+        n_cyc <= n_cyc + 1'd1;
+        if (o_idle) begin
+            n_idle     <= n_idle + 1'd1;
+            frame_idle <= 1;
+        end
+    end
+    if (tick && nRESET) begin
+        frame_idle <= 0;
+        if (frame_idle) streak <= 0;
+        else begin
+            n_busy <= n_busy + 1'd1;
+            if (!(&streak)) streak <= streak + 1'd1;
+            if (streak + 1'd1 > longest && !(&streak)) longest <= streak + 1'd1;
+        end
+    end
+end
+
+// ---- Dark frames and layers off, both builds ----
+// To find a black frame a player saw, and whether the program asked for it. A frame's state is {dark, video off, FIX off,
+// SPR off}: dark is 0 with at least 8192 lit pixels of the 71,680 visible, 1 with fewer, 2 with fewer than 2048, 3 with none; a
+// layer counts as off if it was at some visible pixel. A run of frames in one state other than 0 is an entry:
+// {state 5, its frames up to 127, its first frame 20}. Frames count as word 2 does, as the drive's commands in words 81-104.
+reg      [16:0] v_lit = 0;
+reg       [2:0] v_off = 0;
+reg       [4:0] v_last = 0;
+reg [7:0][31:0] v_ring = 0;             // [0] the newest
+wire      [4:0] v_now = {v_lit == 0 ? 2'd3 : v_lit < 17'd2048 ? 2'd2 : v_lit < 17'd8192 ? 2'd1 : 2'd0, v_off};
+
+always @(posedge clk_48m) begin
+    if (vid[4] && !(&v_lit)) v_lit <= v_lit + 1'd1;
+    if (vid[3]) v_off <= v_off | vid[2:0];
+    if (tick) begin
+        v_lit <= 0;
+        v_off <= 0;
+        if (nRESET) begin
+            v_last <= v_now;
+            if (v_now != 0 && v_now != v_last) v_ring <= {v_ring[6:0], {v_now, 7'd1, frames[19:0]}};
+            else if (v_now != 0 && !(&v_ring[0][26:20])) v_ring[0][26:20] <= v_ring[0][26:20] + 1'd1;
+        end
+    end
+end
+
 // ---- The copy the bridge reads ----
 
 (* ramstyle = "M10K, no_rw_check" *) reg [31:0] copy [0:(1 << ADDR_W) - 1];
-(* ramstyle = "M10K, no_rw_check" *) reg [31:0] tl [0:1023];    // the timelines, the file's second 4 KB
+(* ramstyle = "M10K, no_rw_check" *) reg [31:0] tl [0:1023];    // the load log, the file's second 4 KB
 
 reg [6:0] wi = WORDS;
 
@@ -186,7 +268,9 @@ wire [0:20][31:0] cd_hold;     // 106-126
 wire [0:126][31:0] words = {MAGIC, RD_WAIT, REV, c1_wait, LAYOUT, frames, worst, total,
                             reads[0], reads[1], reads[2], reads[3],
                             lost[0], lost[1], lost[2], lost[3], frames, cd_words,
-                            save_word, cd_more, 512'd0, cd_last, run_no, cd_hold};
+                            save_word, cd_more, {ovc[25:24], CD, 29'd0}, n_idle[39:8], n_busy, {longest, 16'd0}, n_cyc[39:8],
+                            v_ring[0], v_ring[1], v_ring[2], v_ring[3], 96'd0, v_ring[4], v_ring[5], v_ring[6], v_ring[7],
+                            cd_last, run_no, cd_hold};
 
 reg [15:0] n_exch = 0, n_z80 = 0;
 reg [23:0] n_fix = 0, n_spr = 0, n_pcm = 0;
@@ -200,6 +284,47 @@ always @(posedge clk_48m) begin
     if (cdd[111] & ~seen[3]) n_pcm  <= n_pcm + 1'd1;
     if (cdd[112] & ~seen[4]) n_z80  <= n_z80 + 1'd1;
     if (cdd[113] & ~seen[5]) n_ferr <= n_ferr + 1'd1;
+end
+
+// ---- The last two runs of frames with a layer off, in detail: words 110-121 ----
+// What the program did while it kept the screen off. A run here is frames in a row with any layer off. Six words a run, the
+// newer run first: {the state of its first frame 5, its frames up to 127, its first frame 20}; {a DMA ran, its bus cycles /
+// 16384 up to 255, the 68K's address as its first frame ended}; {9'd0, the address as its last frame ended}; {writes to
+// FIX, writes to the Z80, 16 bits each, up to 65535}; writes to SPR; writes to PCM. A write is the transfer area's strobe, the
+// 68K's or a DMA's, as in words 23 to 29.
+wire        e_fix = cdd[109] & ~seen[1], e_spr = cdd[110] & ~seen[2], e_pcm = cdd[111] & ~seen[3], e_z80 = cdd[112] & ~seen[4];
+reg  [15:0] f_fix = 0, f_z80 = 0;       // the frame's own
+reg  [19:0] f_spr = 0, f_pcm = 0;
+reg  [17:0] f_cyc = 0;
+reg         f_dma = 0;
+reg  [23:0] d_cyc = 0;
+reg  [31:0] d_ent = 0, d_first = 0, d_last = 0, d_fz = 0, d_spr = 0, d_pcm = 0;
+reg [191:0] d_old = 0;
+wire        d_new = v_last[2:0] == 0;   // the frame that ends is the first of its run
+wire [23:0] d_cyc_n = (d_new ? 24'd0 : d_cyc) + f_cyc;
+wire [16:0] d_fix_n = (d_new ? 17'd0 : d_fz[31:16]) + f_fix;
+wire [16:0] d_z80_n = (d_new ? 17'd0 : d_fz[15:0]) + f_z80;
+
+always @(posedge clk_48m) begin
+    if (e_fix && !(&f_fix)) f_fix <= f_fix + 1'd1;
+    if (e_z80 && !(&f_z80)) f_z80 <= f_z80 + 1'd1;
+    if (e_spr && !(&f_spr)) f_spr <= f_spr + 1'd1;
+    if (e_pcm && !(&f_pcm)) f_pcm <= f_pcm + 1'd1;
+    if (o_end && !(&f_cyc)) f_cyc <= f_cyc + 1'd1;
+    if (dmab[48]) f_dma <= 1;
+    if (tick) begin
+        {f_fix, f_z80, f_spr, f_pcm, f_cyc, f_dma} <= 0;
+        if (nRESET && v_now[2:0] != 0) begin
+            if (d_new) d_old <= {d_ent, d_first, d_last, d_fz, d_spr, d_pcm};
+            d_ent   <= d_new ? {v_now, 7'd1, frames[19:0]} : {d_ent[31:27], d_ent[26:20] + 7'(d_ent[26:20] != 7'd127), d_ent[19:0]};
+            d_first <= {(~d_new & d_first[31]) | f_dma, |d_cyc_n[23:22] ? 8'd255 : d_cyc_n[21:14], d_new ? o_a : d_first[22:0]};
+            d_last  <= {9'd0, o_a};
+            d_fz    <= {d_fix_n[16] ? 16'hFFFF : d_fix_n[15:0], d_z80_n[16] ? 16'hFFFF : d_z80_n[15:0]};
+            d_spr   <= (d_new ? 32'd0 : d_spr) + f_spr;
+            d_pcm   <= (d_new ? 32'd0 : d_pcm) + f_pcm;
+            d_cyc   <= d_cyc_n;
+        end
+    end
 end
 
 assign cd_words = {{n_fix, cdd[39:32]}, cdd[31:0], {n_spr, cdd[79:72]}, cdd[71:40],
@@ -221,8 +346,10 @@ reg        wrote = 0;
 
 reg [31:0] first_fail = 0, first_late = 0;
 
-// The 2x hold in cd.sv, which keeps a sector from the decoder while its interrupt is masked, for 50 ms at most. cd2[35]
-// is up while a sector is held, and cd2[36] toggles when a hold runs out: the program kept the interrupt masked for 50 ms
+// cd.sv's hold, keeping a sector from the decoder while its interrupt is masked, for 50 ms at most: at every speed up to
+// 0.5.2, none in 0.5.3, and with Turbo 4x alone from 0.6.0. cd2[35] is up while a sector is held and cd2[36] toggles when
+// a hold runs out, so these count 0 with Turbo off;
+// the words stay so that tools/check_wait_save.py reads every revision the same way
 reg [31:0] n_holds = 0, n_expired = 0;
 reg        hold_d = 0, exp_d = 0;
 // Each sector the decoder offered, as cd.sv's DBG_SECT has it at the next flip: sect[36] toggles for one DMA'd from the
@@ -286,16 +413,8 @@ always @(posedge clk_48m) begin
     end
 end
 
-// The event timeline, one per CD/CDZ setting, in the file's second 4 KB: 255 entries of two words, {type, time} and a
-// payload, in a ring from the release of nRESET. Samurai Shodown RPG's music, the first PLAY to 60:58:21, is the
-// trigger: 96 more entries after it and that setting's timeline stops, for this opening of the core, so a Reset Core
-// after a failure does not overwrite it. Entry 0 is {"TL", wrapped, the next entry} and the run, once it has stopped.
-// Time is the 68K clock counter in units of 1,024 clocks, 21 us. Types: 0 a drive command, {its digits, code}, IDLE and
-// TOC left out; 1 a sector the drive asked for, {audio, its LBA}, only the first of a run of audio ones; 2, 3, 4 a sector
-// offered, DMA'd, skipped or lost, its header; 5 a change the 68K made to a BIOS variable, {which, strobes, data}; 6 the
-// drive's status changed, {status, LBA}. Variables, A5 = $108000: 0 $7651 the queue's tail (its head, $7650, moves all
-// the time and stays out), 1 the queue's entries, 2 $7688 sectors to come, 3 $76B6/7 reading and stage, 4 $76C8 position
-// sought, 5 $7EC4 loading, 6 $76F6 the CDDA request, 7 $7E04.
+// Writes to the BIOS's variables, n_bios. Variables, A5 = $108000: 0 $7651 the queue's tail, 1 the queue's entries, 2 $7688
+// sectors to come, 3 $76B6/7 reading and stage, 4 $76C8 position sought, 5 $7EC4 loading, 6 $76F6 the CDDA request, 7 $7E04
 reg [22:0] w_a = 0;
 reg [15:0] w_d = 0;
 reg  [1:0] w_ds = 0;
@@ -320,51 +439,9 @@ always @* begin
     endcase
 end
 
-wire       is_music = cmd_send && cdd[35:0] == 36'h0_1285_0603;
-wire       log_cmd  = cmd_send && cdd[3:0] != 0 && cdd[3:0] != 4'd2;
-wire       changed  = w_end && w_hit && (w_sel == 3'd1 || last[w_sel] != {w_ds, w_d});
-wire       log_bios = changed && !(w_sel == 3'd0 && w_ds == 2'b10);
-
-reg  [1:0] tl_done = 0;
-reg        tl_sel = 0, tl_on = 0, tl_trig = 0, tl_wrap = 0, tl_ph = 0, tl_clear = 0, dreq_d = 0, audio_d = 0;
-reg  [1:0] tl_meta = 0;                 // 1, 2: entry 0's two words
-reg  [7:0] tl_head = 1;
-reg  [6:0] tl_post = 0;
-reg  [2:0] fate_d = 0;
-reg  [3:0] stat_d = 0, ty_sect = 0;
-reg  [4:0] p = 0;                       // pending: {status, sector, BIOS, request, command}
-reg [31:0] d_cmd = 0, d_req = 0, d_bios = 0, d_sect = 0, d_stat = 0, ev_pay = 0;
-
-wire [3:0]  next_ty  = p[0] ? 4'd0 : p[1] ? 4'd1 : p[2] ? 4'd5 : p[3] ? ty_sect : 4'd6;
-wire [31:0] next_pay = p[0] ? d_cmd : p[1] ? d_req : p[2] ? d_bios : p[3] ? d_sect : d_stat;
-
-reg        tl_we;
-reg  [9:0] tl_wa;
-reg [31:0] tl_wd;
-always @* begin
-    tl_we = 0;
-    tl_wa = {tl_sel, tl_head, tl_ph};
-    tl_wd = tl_ph ? ev_pay : {next_ty, total[37:10]};
-    if (tl_clear) begin
-        tl_we = 1;
-        tl_wa = {tl_sel, 9'd0};
-        tl_wd = 0;
-    end
-    else if (tl_meta == 2'd1) begin
-        tl_we = 1;
-        tl_wa = {tl_sel, 9'd0};
-        tl_wd = {16'h544C, 7'd0, tl_wrap, tl_head};
-    end
-    else if (tl_meta == 2'd2) begin
-        tl_we = 1;
-        tl_wa = {tl_sel, 9'd1};
-        tl_wd = run_no;
-    end
-    else if (tl_ph || (tl_on && p != 0)) tl_we = 1;
-end
+wire       changed = w_end && w_hit && (w_sel == 3'd1 || last[w_sel] != {w_ds, w_d});
 
 always @(posedge clk_48m) begin
-    if (tl_we) tl[tl_wa] <= tl_wd;
     if (!nAS) begin
         if (!in_cycle) w_ds <= 0;
         w_a  <= cd2[30:8];
@@ -378,75 +455,179 @@ always @(posedge clk_48m) begin
         last[w_sel] <= {w_ds, w_d};
         n_bios      <= n_bios + 1'd1;
     end
+end
 
-    // One entry at a time; sources are many clocks apart
-    if (tl_clear) tl_clear <= 0;
-    else if (tl_meta == 2'd1) tl_meta <= 2'd2;
-    else if (tl_meta == 2'd2) tl_meta <= 0;
-    else if (tl_ph) begin
-        tl_ph   <= 0;
-        tl_head <= tl_head == 8'd255 ? 8'd1 : tl_head + 1'd1;
-        if (tl_head == 8'd255) tl_wrap <= 1;
-        if (tl_trig) begin
-            tl_post <= tl_post + 1'd1;
-            if (tl_post == 7'd95) begin
-                tl_on            <= 0;
-                tl_done[tl_sel]  <= 1;
-                tl_meta          <= 2'd1;
-            end
-        end
-    end
-    else if (tl_on && p != 0) begin
-        tl_ph  <= 1;
-        ev_pay <= next_pay;
-        p      <= p & (p - 1'd1);
-    end
+// The load log, the file's second 4 KB, CD build only: the cart's stays as the host loaded it. A load starts on a PLAY command or a data sector request and ends on
+// a PAUSE or STOP command, an audio sector request, or nRESET falling. A load with no data sector, as the music's PLAY to
+// an audio track, is dropped. Entry n (1 to 127 from revision 12, to 255 before) is words 4n to 4n+3:
+//   {flags at the start: Turbo, cd_speed 2, CDZ; start time 28}, {why it ended: 1 PAUSE, 2 STOP, 3 audio sector, 4 reset;
+//   end time 28}, {PLAYs 16, data sectors 16, both up to 65535}, {run 8, the ring's waits 12, cd_fetch's late polls 12}
+// Times are the 68K clock counter in units of 1,024 clocks, 21.33 us; the two counts are what they added in the load.
+// Entry 0 is {"LD", 7'd0, wrapped, the next entry} and three words of 0. The log goes on across resets and openings of
+// the core: the host loads the whole file before the core runs, and the first release of nRESET takes the head from it.
+reg        tl_on = 0, tl_wrap = 0, tl_wr = 0, dreq_d = 0;
+reg  [2:0] tl_ph = 0;                   // the word being written: 0-3 the entry, 4-7 entry 0
+reg  [7:0] tl_head = 1;
+reg  [3:0] tl_flags = 0, tl_reason = 0;
+reg [27:0] tl_t0 = 0, tl_t1 = 0;
+reg [15:0] tl_plays = 0, tl_sectors = 0;
+reg [11:0] tl_waits = 0, tl_late = 0;   // at the start, then what the load added
+reg  [7:0] loaded_head = 1;             // clk_74a, steady long before nRESET first rises, as loaded_run
+reg        loaded_wrap = 0;
 
-    dreq_d <= dreq[25];
-    fate_d <= sect[36:34];
-    stat_d <= cdd[83:80];
-    if (dreq[25] != dreq_d) audio_d <= dreq[24];
-    if (tl_on) begin
-        if (is_music) tl_trig <= 1;
-        if (log_cmd) begin
-            p[0]  <= 1;
-            d_cmd <= {cdd[35:8], cdd[3:0]};
-        end
-        if (dreq[25] != dreq_d && (!dreq[24] || !audio_d)) begin
-            p[1]  <= 1;
-            d_req <= {dreq[24], 7'd0, dreq[23:0]};
-        end
-        if (log_bios) begin
-            p[2]   <= 1;
-            d_bios <= {11'd0, w_sel, w_ds, w_d};
-        end
-        if (sect[36:34] != fate_d) begin
-            p[3]    <= 1;
-            ty_sect <= sect[36] != fate_d[2] ? 4'd2 : sect[35] != fate_d[1] ? 4'd3 : 4'd4;
-            d_sect  <= sect[31:0];
-        end
-        if (cdd[83:80] != stat_d) begin
-            p[4]   <= 1;
-            d_stat <= {cdd[83:80], 4'd0, cdd[107:84]};
-        end
-    end
+wire       tl_req   = dreq[25] != dreq_d;
+wire       tl_play  = cmd_send && cdd[3:0] == 4'd3;
+wire [3:0] tl_end   = !nRESET && nreset_d ? 4'd4 :
+                      cmd_send && cdd[3:0] == 4'd6 ? 4'd1 :
+                      cmd_send && cdd[3:0] == 4'd1 ? 4'd2 :
+                      tl_req && dreq[24] ? 4'd3 : 4'd0;
 
-    if (nRESET && !nreset_d) begin
-        tl_sel <= cd2[0];
-        tl_on  <= !tl_done[cd2[0]];
-        if (!tl_done[cd2[0]]) begin
-            tl_head  <= 8'd1;
-            tl_post  <= 0;
-            tl_trig  <= 0;
-            tl_wrap  <= 0;
-            tl_ph    <= 0;
-            tl_clear <= 1;
-            p        <= 0;
+// The trace, words 512 to 1023 of the same 4 KB, a ring of the last 512 events while a load is on, to see why a load does not
+// end: what the drive asked for after each PLAY, and what became of each sector at the decoder. An event is
+// {kind 4, time 12 in units of 8,192 clocks (0.17 ms, it wraps every 0.7 s), value 16}:
+//   1 a PLAY or SEEK command, its target {seconds, frames} in BCD; 2 another command but IDLE and TOC, its low 16 bits;
+//   3 the drive asks for a data sector, 4 for an audio one, the low 16 bits of its LBA;
+//   5 the decoder's sector was DMA'd, 6 its status was read and it was not DMA'd, 7 neither: {seconds, frames} of its header;
+//   8 the ring made a request wait for a host read, 9 the ring was flushed;
+//   A the drive's status went to the 68K: {drive state 4, the low 12 bits of its position};
+//   B the decoder's interrupt mask changed: 1 masked with the decoder on.
+// Kinds 1 and 2 are kept always, the rest only in a load. The next word to write is in word 126 of the run's record. The
+// words are cleared as the core opens, so the file never mixes two openings.
+reg  [10:0] tr_pend = 0;                // by kind - 1
+reg  [15:0] tr_val [0:10];
+reg   [8:0] tr_wp = 0;
+reg   [9:0] tr_clr = 0;                 // 512 words to clear, from the first release of nRESET
+reg   [2:0] sect_tog = 0;
+reg  [15:0] ring_wait_d = 0, ring_flush_d = 0;
+reg         masked_d = 0;
+reg   [3:0] tr_k;
+always @* begin
+    tr_k = 4'd0;
+    for (int k = 10; k >= 0; k--) if (tr_pend[k]) tr_k = 4'(k + 1);
+end
+
+reg        tl_we;
+reg  [9:0] tl_wa;
+reg [31:0] tl_wd;
+always @* begin
+    tl_we = CD && tl_wr;
+    tl_wa = tl_ph[2] ? {8'd0, tl_ph[1:0]} : {1'b0, tl_head[6:0], tl_ph[1:0]};
+    case (tl_ph)
+        3'd0: tl_wd = {tl_flags, tl_t0};
+        3'd1: tl_wd = {tl_reason, tl_t1};
+        3'd2: tl_wd = {tl_plays, tl_sectors};
+        3'd3: tl_wd = {run_no[7:0], tl_waits, tl_late};
+        3'd4: tl_wd = {16'h4C44, 7'd0, tl_wrap, tl_head};
+        default: tl_wd = 0;
+    endcase
+    if (CD && !tl_wr) begin
+        if (tr_clr[9]) begin
+            tl_we = 1;
+            tl_wa = {1'b1, tr_clr[8:0]};
+            tl_wd = 0;
+        end
+        else if (tr_k != 0) begin
+            tl_we = 1;
+            tl_wa = {1'b1, tr_wp};
+            tl_wd = {tr_k, total[24:13], tr_val[tr_k - 4'd1]};
         end
     end
 end
 
-assign cd_hold = {{n_holds[15:0], n_expired[15:0]}, n_bios, n_taken, sect[31:0], 512'd0, {n_late, 13'd0, tl_done, sect[32]}};
+always @(posedge clk_48m) begin
+    // Each kind keeps its last value until it is written, one a clock, the lowest kind first: two of a kind are far apart
+    if (CD && !tl_wr && !tr_clr[9] && tr_k != 0) begin
+        tr_pend[tr_k - 4'd1] <= 0;
+        tr_wp <= tr_wp + 1'd1;
+    end
+    if (tr_clr[9] && !tl_wr) tr_clr <= tr_clr + 1'd1;      // from 512 up to 1023, then 0: bit 9 falls
+    if (nRESET && !nreset_run_d && !started) tr_clr <= 10'd512;
+
+    sect_tog     <= sect[36:34];
+    ring_wait_d  <= rcnt[95:80];
+    ring_flush_d <= rcnt[47:32];
+    masked_d     <= cd2[34];
+    if (nRESET && cmd_send && (cdd[3:0] == 4'd3 || cdd[3:0] == 4'd4)) begin
+        tr_pend[0] <= 1;
+        tr_val[0]  <= {cdd[19:16], cdd[23:20], cdd[27:24], cdd[31:28]};
+    end
+    if (nRESET && cmd_send && cdd[3:0] != 4'd0 && cdd[3:0] != 4'd2 && cdd[3:0] != 4'd3 && cdd[3:0] != 4'd4) begin
+        tr_pend[1] <= 1;
+        tr_val[1]  <= cdd[15:0];
+    end
+    if (tl_on && nRESET) begin
+        if (tl_req) begin
+            tr_pend[dreq[24] ? 3 : 2] <= 1;
+            tr_val[dreq[24] ? 3 : 2]  <= dreq[15:0];
+        end
+        for (int k = 0; k < 3; k++) if (sect[36 - k] != sect_tog[2 - k]) begin
+            tr_pend[4 + k] <= 1;
+            tr_val[4 + k]  <= {sect[15:8], sect[23:16]};
+        end
+        if (rcnt[95:80] != ring_wait_d) begin
+            tr_pend[7] <= 1;
+            tr_val[7]  <= rcnt[95:80];
+        end
+        if (rcnt[47:32] != ring_flush_d) begin
+            tr_pend[8] <= 1;
+            tr_val[8]  <= rcnt[47:32];
+        end
+        if (cdd[108] && !seen[0]) begin
+            tr_pend[9] <= 1;
+            tr_val[9]  <= {cdd[83:80], cdd[95:84]};
+        end
+        if (cd2[34] != masked_d) begin
+            tr_pend[10] <= 1;
+            tr_val[10]  <= {15'd0, cd2[34]};
+        end
+    end
+end
+
+always @(posedge clk_48m) begin
+    if (tl_we) tl[tl_wa] <= tl_wd;
+    dreq_d <= dreq[25];
+
+    // One word a clock; loads are many clocks apart
+    if (tl_wr) begin
+        tl_ph <= tl_ph + 1'd1;
+        if (tl_ph == 3'd3) begin
+            tl_head <= tl_head == 8'd127 ? 8'd1 : tl_head + 1'd1;
+            if (tl_head == 8'd127) tl_wrap <= 1;
+        end
+        if (tl_ph == 3'd7) tl_wr <= 0;
+    end
+
+    if (tl_on) begin
+        if (tl_play && !(&tl_plays)) tl_plays <= tl_plays + 1'd1;
+        if (tl_req && !dreq[24] && !(&tl_sectors)) tl_sectors <= tl_sectors + 1'd1;
+        if (tl_end != 0) begin
+            tl_on     <= 0;
+            tl_wr     <= tl_sectors != 0;
+            tl_ph     <= 0;
+            tl_reason <= tl_end;
+            tl_t1     <= total[37:10];
+            tl_waits  <= rcnt[91:80] - tl_waits;
+            tl_late   <= fw[6][11:0] - tl_late;
+        end
+    end
+    else if (nRESET && (tl_play || (tl_req && !dreq[24]))) begin
+        tl_on      <= 1;
+        tl_flags   <= {rcnt != 0, cd2[3:2], cd2[0]};
+        tl_t0      <= total[37:10];
+        tl_plays   <= tl_play ? 16'd1 : 16'd0;
+        tl_sectors <= tl_play ? 16'd0 : 16'd1;
+        tl_waits   <= rcnt[91:80];
+        tl_late    <= fw[6][11:0];
+    end
+
+    if (nRESET && !nreset_run_d && !started) begin
+        tl_head <= loaded_head;
+        tl_wrap <= loaded_wrap;
+    end
+end
+
+assign cd_hold = {{n_holds[15:0], n_expired[15:0]}, n_bios, n_taken, sect[31:0], d_ent, d_first, d_last, d_fz, d_spr, d_pcm, d_old, rcnt,
+                  {n_late, 4'd0, tr_wp, 2'd0, sect[32]}};
 assign cd_more = {{7'd0, cd2[53:37], ~nRESET, settings}, {resets, released}, samples[0], samples[1], samples[2], samples[3],
                   fw[0], fw[1], fw[2], fw[3], fw[4], fw[5], fw[6], fw[7], first_fail, first_late};
 assign cd_last = {fw[8], fw[9], dw, {16'd0, n_nowhere}, {16'd0, n_swap}, {8'd0, n_cmds},
@@ -463,7 +644,7 @@ end
 // ---- Bridge and the slot write, clk_74a ----
 
 wire  [6:0] idx = bridge_addr[8:2];
-wire        is_pattern = idx[6:4] == 3'd3 || idx == 7'd127;
+wire        is_pattern = (idx >= 7'd57 && idx <= 7'd59) || idx == 7'd127;
 wire        tl_file = bridge_addr[12];
 wire        file_wr = bridge_wr && bridge_addr[31:28] == 4'h8;
 reg  [31:0] copy_q = 0, tl_q = 0;
@@ -485,6 +666,12 @@ always @(posedge clk_74a) begin
     tl_q   <= tl[bridge_addr[11:2]];
     // A new file from the host is all ones, which is no run number
     if (file_wr && !tl_file && idx == 7'd105 && bridge_wr_data != 32'hFFFF_FFFF && bridge_wr_data > loaded_run) loaded_run <= bridge_wr_data;
+    // The load log's header, likewise: an old file's (all ones, or a timeline's "TL") starts the log at entry 1
+    if (file_wr && tl_file && bridge_addr[11:2] == 10'd0) begin
+        // An older file's head past 127 would point into the trace: its log starts again
+        loaded_head <= bridge_wr_data[31:16] == 16'h4C44 && bridge_wr_data[7:0] != 0 && !bridge_wr_data[7] ? bridge_wr_data[7:0] : 8'd1;
+        loaded_wrap <= bridge_wr_data[31:16] == 16'h4C44 && bridge_wr_data[8] && !bridge_wr_data[7];
+    end
     if (bridge_rd) bridge_rd_data <= tl_file ? tl_q : is_pattern ? 32'h5A00_0000 | idx : copy_q;
     timer  <= run ? timer + 1'd1 : 29'd0;
     nreset_74  <= {nreset_74[1:0], nRESET};

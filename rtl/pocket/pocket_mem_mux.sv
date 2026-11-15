@@ -19,8 +19,8 @@
 //   CRAM0  loader > save path and posted backup write (cart) > 68K > fix (cart) > CD write > Z80 > S and M1 copy,
 //          and a Z80 access starts only in the window after PCK2 falls
 //   CRAM1  loader > CD write > ADPCM-A > ADPCM-B
-//   SDRAM  sprite > CD read > loader > CD write; refresh is a toggle the controller takes first, spaced apart
-//          here, and a slot that finds a CD write waiting passes to it, as sdram_mux ranks them
+//   SDRAM  sprite > CD read > loader > CD write > CD ring read > CD ring write; refresh is a toggle the controller takes
+//          first, spaced apart here, and a slot that finds a CD write waiting passes to it, as sdram_mux ranks them
 //   SRAM   fix > CD read > CD write, or fix > copy write > Z80 in the cart core, through sram_port
 //
 // Requests stay pending until served, so clients arriving together are all served in order, and
@@ -41,9 +41,12 @@
 // CD_TR_WR_SPR, CD_TR_WR_PCM or CD_TR_WR_FIX is posted to one queue, as the 68K's own writes may arrive
 // behind other traffic. A read ranks above the queue, as sdram_mux: a read of a word still queued would be
 // stale, and it cannot happen at the 68K's 32 clocks per bus cycle, as the head has started before the next
-// one. A faster 68K must check this again (the bench's WR_TO_RD). DMA_SDRAM_BUSY stalls the DMA engine per
-// access, so only the 68K can find the queue full. PCM and FIX writes hold the 68K's DTACK until they are in
-// the chip (CD_PCM_DTACK), so a FF0149 cannot overtake a FIX write in flight.
+// one. The ring clients are inside that margin too: test_spr_margin_with_ring measures a SPR write at worst 16 clocks to the head with
+// ring reads and writes beside it (15 without), against 24. A faster 68K must check this again (the bench's WR_TO_RD). DMA_SDRAM_BUSY stalls the DMA engine per
+// access, so only the 68K can find the queue full. A FIX write holds the 68K's DTACK until it is in the chip
+// (CD_FIX_DTACK), so a FF0149 cannot overtake one in flight. A PCM write is posted as SPR's since 0.6.0: held until it was in
+// CRAM1, the BIOS's upload of 256 KB took an overclocked 68K 10 frames more than the loop itself (Fatal Fury 3, measured on
+// the Pocket). No read overtakes it: CRAM1 serves the queue ahead of ADPCM's reads, which are the 68K's PCM reads too.
 //
 // The remaps are sdram_mux.sv:120,123 with the chip changed: SPR RAM is at the SDRAM's 0 (4 MB), FIX RAM
 // at the SRAM's word 0 (nSYSTEM_G is always 1 in the CD build, so the fix always reads it), and PCM RAM at
@@ -67,6 +70,10 @@ module pocket_mem_mux #(
     parameter CD_WQ_DEPTH = 2,
     // The CD paths exist. SYSTEM_CDx turns them on at run time
     parameter bit CD_BUILD = 0,
+    // The CD ring's accesses start only in the first RING_WIN clocks after PCK1 falls, so that with the sprite fetch 64
+    // clocks apart none is in the SDRAM when the next one comes, even queued behind an access and a refresh: unwindowed, a
+    // ring write and a refresh ahead of it made a sprite fetch 30 clocks late, against 27 (sim/mem's test_ring_with_sprites)
+    parameter RING_WIN = 32,
     // The cart core's layout: S and M1 in the SRAM, MVS backup RAM in CRAM0
     parameter bit ROM_SRAM = 0,
     // Direct-mapped read caches for what stays on CRAM0: 2K words of M1 (5 M10K), 1K words of fix (3 M10K)
@@ -143,7 +150,7 @@ module pocket_mem_mux #(
     input             CD_TR_WR_SPR,
     input             CD_TR_WR_PCM,
     input             CD_BANK_PCM,
-    output reg        CD_PCM_DTACK = 0, // a CPU PCM or FIX write is in the chip, until nAS rises
+    output reg        CD_FIX_DTACK = 0, // a CPU FIX write is in the chip, until nAS rises
     input      [23:0] DMA_ADDR_OUT,
     input      [23:0] DMA_ADDR_IN,
     input      [15:0] DMA_DATA_OUT,
@@ -172,6 +179,18 @@ module pocket_mem_mux #(
     output reg [15:0] fx_wdata = 0,
     input             fx_ack,
     input      [15:0] fx_rdata,
+
+    // The CD ring, past the SPR RAM (cd_ring_wr.sv). Writes: rw_word and rw_data are taken by a one clock rw_take. Reads, on
+    // the related CLK_48M: rr_req toggles with rr_word, a multiple of 4, stable until rr_done equals it; rr_data, the burst
+    // with word 0 in [15:0], is valid from then. Tie both off in the cart build
+    input             rw_valid,
+    input      [24:0] rw_word,
+    input      [15:0] rw_data,
+    output reg        rw_take = 0,
+    input             rr_req,
+    input      [24:0] rr_word,
+    output reg        rr_done = 0,
+    output reg [63:0] rr_data = 0,
 
     // SDRAM pins
     inout      [15:0] dram_dq,
@@ -424,8 +443,7 @@ localparam [1:0] C1_LOADER = 0, C1_A = 1, C1_B = 2;
 localparam [1:0] FX_VIDEO = 0, FX_RD = 1, FX_WR = 2;
 
 reg  [1:0] c0_owner = C0_LOADER, c1_owner = C1_LOADER;
-reg        c0_sv = 0, c0_cp = 0;    // CRAM0's access is the save path's or the copy's: flags, as c1_cd_wr
-reg        c1_cd_wr = 0;     // CRAM1's write is the CD's. A flag, as a fourth owner would be a fourth FSM state
+reg        c0_sv = 0, c0_cp = 0;    // CRAM0's access is the save path's or the copy's: flags, as a fourth owner would be a fourth FSM state
 reg  [6:0] z80_wait = 0;
 
 // What the SRAM holds, with ROM_SRAM: see mem_map.svh. CRAM0 keeps both ROMs whole, and SFIX is only there.
@@ -555,6 +573,16 @@ assign ROM_COPY_BUSY = ROM_SRAM & (cp_dirty | cp_st != CP_IDLE);
 
 reg        spr_rd_run = 0, spr_wr_run = 0;
 
+// The ring's read: issued and waiting for word 0, then words 1 to 3 shifting in. rr_req is compared here as it is, as fx_ack:
+// CLK_48M's edges are CLK_96M's, so STA times the CLK_48M to CLK_96M path
+reg        rr_run = 0;
+reg  [1:0] rr_n = 0;
+// Clocks since PCK1 fell; bit 6 is PCK1 stopped, and then the ring may go at any time
+reg  [6:0] pck1_since = 0;
+wire       ring_slot = pck1_since < 7'(RING_WIN) || pck1_since[6];
+wire       rr_want = cd & ring_slot & (rr_req != rr_done) & ~rr_run & (rr_n == 2'd0);
+wire       rw_want = cd & ring_slot & rw_valid;
+
 // As sdram_mux. In a DMA only a CD read has owner C0_68K, and a loader word in flight costs one stall.
 assign DMA_SDRAM_BUSY = cd & DMA_RUNNING & (m68k_pend | cd_wq_valid | (c0_req & (c0_we | c0_owner == C0_68K)) |
                                                     tr_fix_pend | tr_spr_pend | (c1_req & c1_we) | spr_rd_run | spr_wr_run |
@@ -675,7 +703,7 @@ always @(posedge CLK) begin
 
     // In a DMA nAS stays high, so ready is one clock
     if ((~nas_sr & nAS) | (cd & DMA_RUNNING)) prom_ready_r <= 0;
-    if (CD_BUILD && nAS) CD_PCM_DTACK <= 0;
+    if (CD_BUILD && nAS) CD_FIX_DTACK <= 0;
 
     // ---- CRAM0 ----
     if (c0_req && c0_ack) begin
@@ -793,12 +821,10 @@ always @(posedge CLK) begin
             end
             default: ;
         endcase
-        if (CD_BUILD && c1_cd_wr) CD_PCM_DTACK <= 1;
     end
     if (!c1_req || c1_ack) begin
         c1_we <= 0;
         c1_be <= 2'b11;
-        if (CD_BUILD) c1_cd_wr <= 0;
         if (dl_c1) begin
             c1_req   <= 1;
             c1_we    <= 1;
@@ -811,7 +837,6 @@ always @(posedge CLK) begin
             c1_req   <= 1;
             c1_we    <= 1;
             c1_owner <= C1_LOADER;      // a write answers nobody
-            c1_cd_wr <= 1;
             c1_addr  <= cd_wq_head_word[23:1];
             c1_wdata <= cd_wq_head_data;
             c1_be    <= cd_wq_head_be;
@@ -840,6 +865,13 @@ always @(posedge CLK) begin
         CR_DOUBLE[cr_shift*16 +:16] <= sd_dout;
         cr_shift <= cr_shift - 1'd1;
     end
+    if (CD_BUILD) rw_take <= 0;
+    if (CD_BUILD) pck1_since <= pck1_fall ? 7'd0 : pck1_since + {6'd0, ~pck1_since[6]};
+    if (CD_BUILD && rr_n != 0) begin
+        rr_data <= {sd_dout, rr_data[63:16]};
+        rr_n    <= rr_n + 1'd1;
+        if (&rr_n) rr_done <= ~rr_done;     // with word 3, so the whole burst is there when the client sees it
+    end
     if (sd_ready && !sd_rd && !sd_wr) begin
         if (crom_run) begin
             CR_DOUBLE[63:48] <= sd_dout;
@@ -852,6 +884,11 @@ always @(posedge CLK) begin
             spr_rd_run   <= 0;
         end
         if (CD_BUILD) spr_wr_run <= 0;
+        if (CD_BUILD && rr_run) begin           // word 0; the other three follow on the next clocks
+            rr_data <= {sd_dout, rr_data[63:16]};
+            rr_run  <= 0;
+            rr_n    <= 1;
+        end
         if (crom_pend | req_crom) begin
             crom_pend <= 0;
             crom_run  <= 1;
@@ -879,6 +916,18 @@ always @(posedge CLK) begin
             sd_bs      <= cd_wq_head_be;
             cd_wq_rp   <= cd_wq_rp + 1'd1;
         end
+        else if (CD_BUILD && rr_want) begin
+            rr_run  <= 1;
+            sd_rd   <= 1;
+            sd_addr <= rr_word;
+        end
+        else if (CD_BUILD && rw_want) begin
+            rw_take <= 1;
+            sd_wr   <= 1;
+            sd_addr <= rw_word;
+            sd_din  <= rw_data;
+            sd_bs   <= 2'b11;
+        end
     end
 
     // ---- SRAM ----
@@ -893,7 +942,7 @@ always @(posedge CLK) begin
                 m1_dout <= m1_addr[0] ? fx_rdata[15:8] : fx_rdata[7:0];
                 m1_ack  <= m1_req;
             end
-            default: if (CD_BUILD) CD_PCM_DTACK <= 1;
+            default: if (CD_BUILD) CD_FIX_DTACK <= 1;
             else begin
                 cp_w  <= cp_w + 1'd1;
                 cp_st <= (&cp_w || cp_dirty) ? CP_IDLE : CP_RD;
@@ -959,7 +1008,7 @@ always @(posedge CLK) begin
         tr_fix_pend <= 0;
         tr_spr_pend <= 0;
         prom_ready_r <= 0;
-        CD_PCM_DTACK <= 0;
+        CD_FIX_DTACK <= 0;
         m1_ack     <= m1_req;
         adpcma_ack <= adpcma_req;
         adpcmb_ack <= adpcmb_req;

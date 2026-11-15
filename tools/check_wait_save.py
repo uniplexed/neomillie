@@ -23,7 +23,7 @@ MAGIC = 0x4E475754
 WORDS = 64
 WORDS_L3 = 128
 PATTERN_OLD = 32        # layouts 1 and 2: the read-lag pattern is words 32-63
-PATTERN_L3 = 48         # layout 3: words 48-63, and word 127
+PATTERN_L3 = 53         # layout 3: words 53-63, and word 127; 48-63 up to revision 8, which this reads as well
 RUN_WORD = 105          # the CD core from 0.5.1: the run number. A blank record has no magic word
 CLK_HZ = 48_000_000     # near enough for a time in minutes
 # Mux owner codes by layout. In the CD core 2 and 3 never happen (no fix or Z80 read on CRAM0): a count there is a fault
@@ -172,6 +172,13 @@ def ring_lines(r, frames):
     return lines
 
 
+def cdring_lines(r):
+    """Revision 8, words 122 to 125: cd_ring's counters; the longest wait is in units of 4,096 clocks of 48 MHz."""
+    hit, waits, ahead, err = r[122], r[123], r[124], r[125]
+    return [f"ring: {hit} served from the ring, {waits >> 16} waited for a read (longest {(waits & 0xFFFF) * 4096 / (CLK_HZ / 1e3):.1f} ms), " +
+            (f"at least {ahead >> 16} sectors ahead, " if ahead >> 16 != 0xFFFF else "no hit yet, ") + f"{ahead & 0xFFFF} flushes, {err} read errors"]
+
+
 def dma_lines(r):
     """Words 64 to 79."""
     words, stall = r[66:70], r[70:74]
@@ -237,6 +244,8 @@ def runout_short(r):
 
 
 def run_short(r):
+    if rev(r) >= 9:
+        return f"{r[108]} sectors DMA'd, last offered {header_text(r[109])}"
     if rev(r) >= 6:
         return f"{r[108]} sectors DMA'd, last offered {header_text(r[109])}, timelines stopped: CD/CDZ off {r[126] >> 1 & 1}, on {r[126] >> 2 & 1}"
     if rev(r) >= 5:
@@ -267,6 +276,65 @@ def hold_short(r):
     if r[106] == 0xFFFFFFFF:
         return "hold not counted"
     return f"hold {r[106]}x, ran out {r[107]}x, longest {r[108] / (CLK_HZ / 1e3):.1f} ms"
+
+
+def open_lines(r):
+    """Revision 7, words 110 to 121: cd_mount's 8 rounds of openfile, in units of 4,096 clocks of 74.25 MHz."""
+    h = [x for w in r[110:122] for x in (w >> 16, w & 0xFFFF)]
+    if not any(h):
+        return ["openfile test: not run, no CUE was mounted"]
+    ms = lambda v: v * 4096 / 74.25e3
+    show = lambda v: "not run" if v == 0 else "error" if v == 0xFFFF else ">= 3,600 ms" if v == 0xFFFE else f"{ms(v):.1f} ms"
+    lines = ["openfile test, each round: open the BIN, read a sector of it, open the CUE"]
+    lines += [f"  round {n}: {show(h[n * 3])}, {show(h[n * 3 + 1])}, {show(h[n * 3 + 2])}" for n in range(8)]
+    good = lambda vs: [ms(v) for v in vs if 0 < v < 0xFFFE]
+    for name, vs in (("open of the BIN after the first", h[3::3]), ("read after an open", h[1::3]), ("open of the CUE", h[2::3])):
+        if good(vs):
+            lines.append(f"  {name}: {min(good(vs)):.1f} to {max(good(vs)):.1f} ms, over {len(good(vs))}")
+    return lines
+
+
+def is_cd(r):
+    """Revision 9's word 48 says which build wrote the file; before it only the CD core wrote layout 3."""
+    return rev(r) < 9 or bool(r[48] >> 29 & 1)
+
+
+def overclock_line(r):
+    """Revision 9, words 48 to 52: the 68K's clock setting, idle bus cycles and busy frames. The cycle counts are in 256s."""
+    return (f"overclock: 68K at {(12, 16, 24, 24)[r[48] >> 30]} MHz: idle {pct(r[49], r[52]):.2f}% of bus cycles, "
+            f"{r[50]} busy frames of {r[2]} ({pct(r[50], r[2]):.2f}%), longest {r[51] >> 16} in a row")
+
+
+def dark_lines(r):
+    """Revision 10, words 53-56 and 60-63, newest first: runs of dark frames or of frames with a layer off, as
+    rtl/test/wait_counter.sv packs them. Printed oldest first."""
+    out = ["--- Dark frames and layers off: the last 8 runs of frames, oldest first"]
+    for e in reversed(r[53:57] + r[60:64]):
+        if e == 0:
+            continue
+        dark, off, n, first = e >> 30, e >> 27 & 7, e >> 20 & 0x7F, e & 0xFFFFF
+        what = [("", "under 8192 lit pixels of 71,680", "under 2048 lit pixels", "black")[dark]] if dark else []
+        what += [name for bit, name in ((4, "video off (FF0119)"), (2, "FIX off (FF0115)"), (1, "SPR off (FF0111)")) if off & bit]
+        out.append(f"  frame {first}: {n}{' or more' if n == 127 else ''} frame{'s' if n != 1 else ''}, {', '.join(what)}")
+    return out + ["  none"] if len(out) == 1 else out
+
+
+def layer_lines(r):
+    """Revision 11, words 110 to 121: the last two runs of frames with a layer off, the newer first, six words each, as
+    rtl/test/wait_counter.sv packs them. Printed older first."""
+    out = ["--- Layers off in detail: what the program did in the last two runs of frames with a layer off, older first"]
+    for at in (116, 110):
+        ent, first, last, fz, spr, pcm = r[at:at + 6]
+        if ent == 0:
+            continue
+        off, n, frame = ent >> 27 & 7, ent >> 20 & 0x7F, ent & 0xFFFFF
+        layers = ", ".join(name for bit, name in ((4, "video"), (2, "FIX"), (1, "SPR")) if off & bit)
+        cyc = first >> 23 & 0xFF
+        out.append(f"  frame {frame}: {n}{' or more' if n == 127 else ''} frame{'s' if n != 1 else ''}, {layers} off at its start")
+        out.append(f"    68K address as its first frame ended {(first & 0x7FFFFF) << 1:06X}, as its last ended {(last & 0x7FFFFF) << 1:06X}; "
+                   f"{'255 or more' if cyc == 255 else cyc} x 16,384 bus cycles; {'a DMA ran' if first >> 31 else 'no DMA'}")
+        out.append(f"    writes: FIX {fz >> 16}, SPR {spr}, PCM {pcm}, Z80 {fz & 0xFFFF} (16 bit counts stop at 65535)")
+    return out + ["  none"] if len(out) == 1 else out
 
 
 def rev(r):
@@ -439,7 +507,8 @@ def verdict_lines(r):
                         f"STAT3 reads with the decoder on that found the status no longer valid: {r[126] >> 16}",
                         f"2x hold: {r[106] >> 16} times, ran out at its 50 ms limit {r[106] & 0xFFFF} times",
                         f"the last sector the decoder offered: {header_text(r[109])}, changes to the BIOS's variables: {r[107]}",
-                        "the events are in the timelines at the end of this report"]
+                        "the loads are in the load log at the end of this report" if rev(r) >= 9 else
+                        "the events are in the timelines at the end of this report"] + (open_lines(r) if 7 <= rev(r) <= 10 else []) + (cdring_lines(r) if rev(r) >= 8 else [])
     if rev(r) >= 5:
         return lines + queue_lines(r)
     if rev(r) >= 4:
@@ -501,14 +570,16 @@ def check(data):
     for code, name in ORDER[layout]:
         lines.append(f"  {name:<14} {reads[code]:>10} {pct(reads[code], n_all):>7.2f}% {lost[code]:>12} "
                      f"{pct(lost[code], all_lost):>12.2f}% {pct(lost[code] / 4, reads[code]):>13.2f}%")
-    if layout != 1:
+    cd = layout == 2 or (layout == 3 and is_cd(r))
+    if cd:
         lines += cd_lines(r)
     lines.append(f"slot writes while running: {r[31] & 0xFFFF}, last error {(r[31] >> 16) & 7}")
     if layout == 2:
         lines.append("this is an old file, layout 2, of a CD core up to 0.3.1: it has no settings, command ring, 68K samples, "
                      "fetch or DMA counts")
-    if layout == 3:
+    if layout == 3 and cd:
         lines += settings_lines(r) + sample_lines(r) + fetch_lines(r)
+    if layout == 3:
         if n < WORDS_L3:
             ok = False
             lines.append(f"this file is {WORDS * 4} bytes and layout 3 writes {WORDS_L3 * 4}: the host kept an old file's size, so the "
@@ -517,8 +588,14 @@ def check(data):
             ok = False
             lines.append(f"word 127 is {r[127]:08X}, not the pattern: the file's second half is not what the core wrote. "
                          "Delete wait.sav from the card and run again")
-        else:
+        elif cd:
             lines += ring_lines(r, frames) + dma_lines(r) + verdict_lines(r)
+        if rev(r) >= 9:
+            lines.append(overclock_line(r))
+        if rev(r) >= 10:
+            lines += dark_lines(r)
+        if rev(r) >= 11 and cd and n >= WORDS_L3:
+            lines += layer_lines(r)
     return ok, lines
 
 
@@ -536,6 +613,9 @@ def check_runs(data):
     runs.sort(key=lambda run: run[0])
     lines = ["--- The runs in this file, oldest first. Worst read in ms, one sector's time being 6.7 at 2x and 13.3 at 1x"]
     for no, r, _ in runs:
+        if not is_cd(r):
+            lines.append(f"  run {no}: {r[2]} frames, {overclock_line(r)}")
+            continue
         lines.append(f"  run {no}: {r[2]} frames, {r[33] >> 24} resets, {r[28] & 0xFF} failed sectors, worst read {r[42] / (CLK_HZ / 1e3):.1f} ms, "
                      f"{r[44]} late polls, {run_short(r)}, drive {DRIVE_STATE.get((r[27] >> 24) & 0xF, '?')} at LBA {r[27] & 0xFFFFFF}")
     lines.append("Counts run on through a reset, so a run's own are the difference from the run before it, within one opening of the core")
@@ -607,14 +687,112 @@ def timeline_lines(data):
     return lines
 
 
+LD_REASON = {1: "PAUSE", 2: "STOP", 3: "audio sector", 4: "reset"}
+
+
+def load_log_entries(data, entries=256):
+    """Revision 9's second 4 KB: the load log's entries in write order, as (run, cdz, speed, turbo, start s, ms, sectors,
+    PLAYs, ring waits, late polls, end). None when the header is not there. From revision 12 the log is 127 entries
+    (entries=128) and the words after it are the trace."""
+    w = struct.unpack(">1024I", data)
+    if w[0] >> 16 != 0x4C44:
+        return None
+    head, wrapped = w[0] & 0xFF, w[0] >> 8 & 1
+    order = list(range(head, entries)) + list(range(1, head)) if wrapped else list(range(1, head))
+    got = []
+    for n in order:
+        a, b, c, d = w[4 * n:4 * n + 4]
+        got.append((d >> 24, a >> 28 & 1, (a >> 29 & 3) + 1, a >> 31, (a & 0xFFFFFFF) * TL_UNIT_MS / 1e3,
+                    ((b - a) & 0xFFFFFFF) * TL_UNIT_MS, c & 0xFFFF, c >> 16, d >> 12 & 0xFFF, d & 0xFFF, LD_REASON.get(b >> 28, "?")))
+    return got
+
+
+TRACE_UNIT_MS = 8192 / CLK_HZ * 1e3
+
+
+def trace_lines(data, next_word):
+    """Revision 12, words 512 to 1023 of the second 4 KB: the last 512 events of the drive and the decoder in a load, as
+    rtl/test/wait_counter.sv packs them, oldest first. next_word is bits 11:3 of the newest record's word 126. Times are
+    from the PLAY or SEEK before, in ms; an event more than 0.7 s after the one before it reads short, as the clock wraps."""
+    w = struct.unpack(">1024I", data)[512:]
+    ev = [w[(next_word + i) % 512] for i in range(512)]
+    ev = [e for e in ev if e != 0]
+    lines = ["", "=== Trace of the last loads: the drive's commands and requests, and what became of each sector at the decoder"]
+    if not ev:
+        return lines + ["no event yet"]
+    msf = lambda v: f"..:{v >> 8:02X}:{v & 0xFF:02X}"
+    t = last = 0
+    for e in ev:
+        kind, tick, v = e >> 28, e >> 16 & 0xFFF, e & 0xFFFF
+        t += (tick - last) & 0xFFF
+        last = tick
+        if kind == 1:
+            t = 0
+            lines.append(f"  PLAY or SEEK to {msf(v)}")
+            continue
+        what = {2: lambda: f"command {command_name(v)} ({v:04X})",
+                3: lambda: f"the drive asks for data sector LBA {v} (low 16 bits)",
+                4: lambda: f"the drive asks for audio sector LBA {v} (low 16 bits)",
+                5: lambda: f"decoder: sector {msf(v)} DMA'd",
+                6: lambda: f"decoder: sector {msf(v)} status read, not DMA'd",
+                7: lambda: f"decoder: sector {msf(v)} neither read nor DMA'd",
+                8: lambda: f"ring: the request waits for a host read (wait number {v})",
+                9: lambda: f"ring: flushed (flush number {v})",
+                10: lambda: f"status to the 68K: {DRIVE_STATE.get(v >> 12, '?')}, position low 12 bits {v & 0xFFF}",
+                11: lambda: f"decoder interrupt {'masked' if v & 1 else 'open'}"}.get(kind, lambda: f"kind {kind} value {v:04X}")()
+        lines.append(f"    {t * TRACE_UNIT_MS:+8.1f} ms  {what}")
+    return lines
+
+
+def load_log_lines(data, entries=256):
+    lines = ["", "=== Load log, oldest first: every load with a data sector, from a PLAY or a data sector request to a PAUSE, a STOP, "
+                 "an audio sector or a reset. Start is the 68K clock in seconds, which runs on across resets within one opening"]
+    got = load_log_entries(data, entries)
+    if got is None:
+        return lines + ["no load yet: the log's header is not in the file"]
+    lines.append(f"{'#':>4} {'run':>4} {'CD/CDZ':>6} {'speed':>5} {'Turbo':>5} {'start s':>9} {'ms':>9} {'sectors':>7} {'PLAYs':>5} "
+                 f"{'ring waits':>10} {'late polls':>10}  end")
+    by_run = {}
+    for i, (run, cdz, speed, turbo, start, ms, sectors, plays, waits, late, end) in enumerate(got, 1):
+        lines.append(f"{i:>4} {run:>4} {'on' if cdz else 'off':>6} {speed:>4}x {'on' if turbo else 'off':>5} {start:>9.1f} {ms:>9.1f} "
+                     f"{sectors:>7} {plays:>5} {waits:>10} {late:>10}  {end}")
+        by_run.setdefault(run, []).append(ms)
+    lines.append("--- Durations per run in ms, in order: the same route in each mode lines up by column")
+    for run, ms in by_run.items():
+        lines.append(f"  run {run:>3}: " + " ".join(f"{m:8.1f}" for m in ms))
+    return lines
+
+
+def second_half_lines(data):
+    """The file's second 4 KB as the newest record's revision has it: the timelines up to 8, from 9 the CD core's load log,
+    and nothing for the cart core's, which keeps what the host loaded."""
+    recs = [struct.unpack(f">{WORDS_L3}I", data[at:at + WORDS_L3 * 4]) for at in range(0, 4096, WORDS_L3 * 4)]
+    recs = [r for r in recs if r[0] == MAGIC]
+    if not recs:
+        return []
+    r = max(recs, key=lambda r: r[RUN_WORD])
+    if rev(r) < 9:
+        return timeline_lines(data[4096:8192])
+    if not is_cd(r):
+        return []
+    if rev(r) < 12:
+        return load_log_lines(data[4096:8192])
+    return load_log_lines(data[4096:8192], 128) + trace_lines(data[4096:8192], r[126] >> 3 & 0x1FF)
+
+
 def read_file(data):
     if len(data) >= 8192:
         ok, lines = check_runs(data[:4096])
-        return ok, lines + timeline_lines(data[4096:8192])
+        return ok, lines + second_half_lines(data)
     return check_runs(data) if len(data) >= 2 * WORDS_L3 * 4 else check(data)
 
 
 def selftest():
+    r = [0] * 128
+    assert "not run" in open_lines(r)[0]
+    r[110:112] = [18 << 16 | 36, 0xFFFF << 16 | 54]
+    got = open_lines(r)
+    assert "round 0: 1.0 ms, 2.0 ms, error" in got[1] and "3.0 ms" in got[2], got
     assert "no UniBIOS" in bios_model(0)
     assert "wrote TOPLOAD, region setting 2; the core stored CDZ" in bios_model(1 << 24 | 0 << 16 | 2 << 8 | 1)
     assert "wrote CDZ, region setting 1; the core stored TOPLOAD" in bios_model(1 << 24 | 2 << 16 | 1 << 8)
@@ -898,6 +1076,97 @@ def selftest():
     assert "$7688 sectors to come = 0058" in text and "drive status PLAY at LBA 17" in text and "audio sector 1000 asked for" in text, text
     assert "data sector -4 asked for" in text and "event type 15" not in text, text
     assert text.index("command PLAY to 00:02:17") < text.index("command PLAY to 60:58:21") < text.index("audio sector 1000"), text
+    # Revision 8: cd_ring's counters in words 122 to 125; worst_wait in units of 4,096 clocks of 48 MHz
+    rr = make3(frames=70000)
+    rr[1] |= 8 << 19
+    rr[22] = 70000
+    rr[122:126] = [1500, (7 << 16) | 586, (24 << 16) | 3, 2]
+    text = chr(10).join(check(pack(rr))[1])
+    assert "ring: 1500 served from the ring, 7 waited for a read (longest 50.0 ms), at least 24 sectors ahead, 3 flushes, 2 read errors" in text, text
+    # Revision 9: the load log in the second 4 KB. Three loads over two runs, then a log that wrapped
+    ld = make3(frames=70000)
+    ld[1] |= 9 << 19
+    ld[22] = 70000
+    ld[RUN_WORD] = 4
+    ld[48] = 1 << 29                    # the CD build
+    log = [0] * 1024                    # 1,500 units of 1,024 clocks are 32 ms
+    log[0] = 0x4C440000 | 4
+    log[4:16] = [0b1011 << 28 | 1000, 1 << 28 | 1000 + 1500, 1 << 16 | 120, 3 << 24 | 7 << 12 | 2,
+                 0b0001 << 28 | 0xFFFFFF0, 3 << 28 | (0xFFFFFF0 + 4500) & 0xFFFFFFF, 0 << 16 | 40, 3 << 24,
+                 0b0111 << 28 | 5000, 4 << 28 | 5000 + 750, 2 << 16 | 9, 4 << 24 | 1]
+    whole = pack(ld + [0] * (8 * WORDS_L3 - len(ld))) + pack(log)
+    ok, lines = read_file(whole)
+    text = "\n".join(lines)
+    assert ok, lines
+    rows = [l.split() for l in lines[lines.index(next(l for l in lines if l.startswith("   # "))) + 1:][:3]]
+    assert rows[0] == "1 3 on 2x on 0.0 32.0 120 1 7 2 PAUSE".split(), rows
+    assert rows[1] == "2 3 on 1x off 5726.6 96.0 40 0 0 0 audio sector".split(), rows
+    assert rows[2] == "3 4 on 4x off 0.1 16.0 9 2 0 1 reset".split(), rows
+    assert "  run   3:     32.0     96.0\n  run   4:     16.0" in text, text
+    assert "Timeline" not in text, text
+    for n in range(1, 256):
+        log[4 * n:4 * n + 4] = [n, n + 750, 1, 5 << 24]
+    log[0] = 0x4C440100 | 2
+    got = load_log_entries(pack(log))
+    assert len(got) == 255 and round(got[0][4] * 1e3 / TL_UNIT_MS) == 2 and round(got[-1][4] * 1e3 / TL_UNIT_MS) == 1, got[:2]
+    assert load_log_entries(pack([0xFFFFFFFF] * 1024)) is None
+    # Revision 9's overclock words, both builds. A cart file prints no CD section and no load log
+    oc = make3()
+    oc[1] |= 9 << 19
+    oc[RUN_WORD] = 2
+    oc[48:53] = [1 << 30, 25, 360, 4 << 16, 100]
+    ok, lines = read_file(pack(oc + [0] * (8 * WORDS_L3 - len(oc))) + pack([0xFFFFFFFF] * 1024))
+    text = "\n".join(lines)
+    assert ok, lines
+    assert "overclock: 68K at 16 MHz: idle 25.00% of bus cycles, 360 busy frames of 36000 (1.00%), longest 4 in a row" in text, text
+    for cd_only in ("CD drive", "Sector fetch", "Settings in effect", "drive's last commands", "Sector sink", "Load log", "ring:",
+                    "failed sectors", "Timeline"):
+        assert cd_only not in text, (cd_only, text)
+    oc[48:53] = [2 << 30 | 1 << 29, 1, 0, 0, 4]
+    text = "\n".join(read_file(pack(oc + [0] * (8 * WORDS_L3 - len(oc))) + pack(log))[1])
+    assert "overclock: 68K at 24 MHz: idle 25.00% of bus cycles, 0 busy frames of 36000 (0.00%), longest 0 in a row" in text, text
+    assert "CD drive" in text and "Sector fetch" in text and "Load log" in text, text
+    # Revision 10: the dark frames take words 53-56 and 60-63, and the pattern stays in 57-59
+    dk = oc[:]
+    dk[1] = dk[1] & ~(0x1F << 19) | 10 << 19
+    assert "none" in "\n".join(dark_lines([0] * 64))
+    dk[53:57] = [3 << 30 | 1 << 20 | 3471, 4 << 27 | 127 << 20 | 3000, 0, 0]
+    dk[60:64] = [0, 0, 0, 2 << 30 | 3 << 27 | 2 << 20 | 100]
+    ok, lines = read_file(pack(dk + [0] * (8 * WORDS_L3 - len(dk))) + pack(log))
+    text = "\n".join(lines)
+    assert ok and "read lag: none" in text, lines
+    assert ("  frame 100: 2 frames, under 2048 lit pixels, FIX off (FF0115), SPR off (FF0111)\n"
+            "  frame 3000: 127 or more frames, video off (FF0119)\n"
+            "  frame 3471: 1 frame, black") in text, text
+    # Revision 11: words 110-121 are the layers-off runs, not the openfile test
+    ly = dk[:]
+    ly[1] = ly[1] & ~(0x1F << 19) | 11 << 19
+    ly[48] = 2 << 30 | 1 << 29
+    ly[110:116] = [0x1F << 27 | 36 << 20 | 3656, 1 << 31 | 35 << 23 | 0xC0DB42 >> 1, 0x123456 >> 1, 12288 << 16 | 7, 500000, 0]
+    text = "\n".join(read_file(pack(ly + [0] * (8 * WORDS_L3 - len(ly))) + pack(log))[1])
+    assert "openfile" not in text, text
+    assert ("  frame 3656: 36 frames, video, FIX, SPR off at its start\n"
+            "    68K address as its first frame ended C0DB42, as its last ended 123456; 35 x 16,384 bus cycles; a DMA ran\n"
+            "    writes: FIX 12288, SPR 500000, PCM 0, Z80 7 (16 bit counts stop at 65535)") in text, text
+    assert "none" in "\n".join(layer_lines([0] * 128))
+    # Revision 12: the trace after a log of 127 entries
+    tr = ly[:]
+    tr[1] = tr[1] & ~(0x1F << 19) | 12 << 19
+    tr[126] = 4 << 3
+    half = [0] * 1024
+    half[0] = 0x4C440000 | 2
+    half[4:8] = [5, 5 + 100, 1 << 16 | 3, 2 << 24]
+    half[512:516] = [1 << 28 | 10 << 16 | 0x0313, 3 << 28 | 16 << 16 | 88, 5 << 28 | 40 << 16 | 0x0313, 6 << 28 | 60 << 16 | 0x0314]
+    text = "\n".join(read_file(pack(tr + [0] * (8 * WORDS_L3 - len(tr))) + pack(half))[1])
+    assert ("  PLAY or SEEK to ..:03:13\n"
+            "        +1.0 ms  the drive asks for data sector LBA 88 (low 16 bits)\n"
+            "        +5.1 ms  decoder: sector ..:03:13 DMA'd\n"
+            "        +8.5 ms  decoder: sector ..:03:14 status read, not DMA'd") in text, text
+    assert len(load_log_entries(pack(half), 128)) == 1
+    # An older revision's second 4 KB is still read as the timelines
+    old = ld[:]
+    old[1] = old[1] & ~(0x1F << 19) | 8 << 19
+    assert "Timeline" in "\n".join(read_file(pack(old + [0] * (8 * WORDS_L3 - len(old))) + pack(log))[1])
     print("selftest ok")
 
 

@@ -31,6 +31,8 @@
 // test_late_host_delays_but_delivers 20 ms of host latency: the same result, later
 // test_disc_swap_invalidates_bank another disc picked with a data read under way, its size a table sweep after the request
 // test_reset_core  Reset Core: the program runs again from the BIOS, with PROG RAM as it left it, the disc still in
+// test_turbo       Turbo 4x on, a restart: 4x, the program's steps to 14, every data read into cd_ring's bridge window; then
+//                  off: today's speed and cd_fetch's single sectors again
 // test_cd_settings CD/CDZ, Region and the lid as FF011C reads them, CD/CDZ taken only in reset and a change restarting the core; a held reset reads
 //                  as STOP at LBA 0 in the drive's debug view, with the last status and command kept
 //
@@ -66,7 +68,8 @@ module tb_topcd;
     localparam string OTHER_BIN = "Test Disc 'X', 1.bin";
     localparam logic [15:0] WORDS_16 = 16'h0010, OTHER_WORDS_16 = 16'hA510;     // sector 16's data words on each
     localparam int DISC_TRACKS = 3, DISC_END = 56;
-    localparam real MOUNT_MS = 40.0;        // about 23 host commands of 1 ms each and the data, sim/cue's 25.7 ms
+    // About 23 host commands of 1 ms each and the data, sim/cue's 25.7 ms; the debug build adds cd_mount's openfile test
+    localparam real MOUNT_MS = `ifdef NEOGEO_WAIT_COUNTER 120.0 `else 40.0 `endif ;
     localparam real SWAP_MS = 100.0;        // and the fetches ahead of it, one still at the late host's 20 ms
     localparam int  HOST_LATENCY = 74250;   // host_bfm's 1 ms
 
@@ -1021,7 +1024,9 @@ module tb_topcd;
         check(w[1][31:24] == dut.neogeo.SDRAM_MUX.RD_WAIT, $sformatf("%s: RD_WAIT %0d", how, w[1][31:24]));
         check(w[1][15:0] == 16'd3, $sformatf("%s: layout %0d, the CD core is 3", how, w[1][15:0]));
         check(w[2] == w[22] && w[2] != 0, $sformatf("%s: frames %0d and %0d", how, w[2], w[22]));
-        for (int i = 48; i < 64; i++) check(w[i] == (32'h5A00_0000 | i), $sformatf("%s: word %0d is %08x", how, i, w[i]));
+        for (int i = 57; i < 60; i++) check(w[i] == (32'h5A00_0000 | i), $sformatf("%s: word %0d is %08x", how, i, w[i]));
+        // The overclock words: the CD build, the 68K's clock setting, and bus cycles counted
+        check(w[48] == {dut.neogeo.cpu_clock, 1'b1, 29'd0} && w[52] != 0, $sformatf("%s: word 48 %08x, 52 %0d", how, w[48], w[52]));
         check(w[127] == 32'h5A00_007F, $sformatf("%s: word 127 is %08x", how, w[127]));
         // These sums are in the copy's first 23 clocks after the tick, with a bus cycle maybe open
         check(file64(w, 4) >= total && file64(w, 4) - total <= 32, $sformatf("%s: total %0d, the bench had %0d", how, file64(w, 4), total));
@@ -1084,7 +1089,7 @@ module tb_topcd;
         check_file(w, total, rd, ls, "file on exit");
         check_cd_words(w, cdt, "file on exit");
         check_layout3(w, cdt, "file on exit");
-        check(w[32] == settings_word(0, 0, 0, 0, 0), $sformatf("the settings word %08x with all at their defaults, want %08x", w[32], settings_word(0, 0, 0, 0, 0)));
+        check(w[32] == settings_word(0, 0, 0, 0), $sformatf("the settings word %08x with all at their defaults, want %08x", w[32], settings_word(0, 0, 0, 0)));
         // What the program really sent, less TOC. tools/make_test_roms.py: on the first boot TRAY CLOSE, with no disc. By
         // the end, its last run with the disc in, after Reset Core: TRAY CLOSE, STOP, PLAY, TRACK PLAY
         if (wait_runs == 0) begin
@@ -1107,7 +1112,7 @@ module tb_topcd;
             check(w[44] != 0 && w[47][31], $sformatf("%0d late polls with a host of 60 ms, first late %08x", w[44], w[47]));
             check(w[66] != 0, "no DMA word to PROG, and the program DMAs a sector there");
             // cd.sv's sectors: the program's DMA took one from the cache
-            check(w[1][23:19] == 5'd6 && w[108] != 0, $sformatf("revision %0d, %0d sectors DMA'd", w[1][23:19], w[108]));
+            check(w[1][23:19] == 5'd12 && w[108] != 0, $sformatf("revision %0d, %0d sectors DMA'd", w[1][23:19], w[108]));
             $display("sectors: %0d DMA'd, the last offered %08x; %0d BIOS read changes, the newest %08x", w[108], w[109], w[107], w[110]);
             check(w[109] != 0, "no header of a sector offered");
         end
@@ -1573,8 +1578,71 @@ module tb_topcd;
         check_clean("Reset Core");
     endtask
 
-    // Word 32 of the wait counter's file for these settings, also with the counter out of the build
-    function automatic logic [31:0] settings_word(input bit cdz, input bit lid_open, input logic [1:0] speed, input logic [1:0] region, input bit in_reset);
+    // While Turbo is off, cd_ring must stay silent: its host read and ring read requests never toggle, and the mux's ring
+    // write input (rw_valid after the turbo gate) is never 1, and the debug build's ring words stay 0. Watched on every clock of the Turbo-off part, not sampled
+    logic mon_off = 0, mon_fr_d, mon_rr_d;
+    int   mon_bad = 0;
+    always @(posedge clk48) begin
+        mon_fr_d <= dut.neogeo.r_fr_req;
+        mon_rr_d <= dut.neogeo.rr_req;
+        if (mon_off && (dut.neogeo.r_fr_req !== mon_fr_d || dut.neogeo.rr_req !== mon_rr_d || (dut.neogeo.rw_valid & dut.neogeo.turbo) !== 1'b0
+`ifdef NEOGEO_WAIT_COUNTER
+                        || dut.neogeo.dbg_ringc !== 128'd0
+`endif
+           ))
+            mon_bad++;
+    end
+
+    // Turbo 4x on or off, a change that restarts the core by itself, then the program's run from the BIOS to step 14 with the
+    // disc in. On: 4x, and every data slot read of the run is cd_ring's, into its bridge window 0x7400_0000 to 0x7409_2FFF.
+    // Off: today's speed, and every read is cd_fetch's, one sector into a bank slot at 0x7000_s000
+    task automatic turbo_run(input bit on);
+        realtime t_rel;
+        automatic int rel = releases, reads = 0;
+        automatic string how = on ? "Turbo on" : "Turbo off";
+        automatic logic [1:0] want_speed;
+        mbox = 0;
+        vbl_count = 0;
+        host.bfm.write32(32'hF000_0614, 32'(on));
+        while (nRESET) @(posedge clk74);
+        for (int i = 0; i < 1024; i++) mem_c0.mem[DMA_TO_W + 23'(i)] = 16'hDEAD;
+        wait_release(300.0);
+        t_rel = $realtime;
+        check(releases == rel + 1, $sformatf("%s: no restart", how));
+        mon_off = !on;
+        check(dut.neogeo.turbo == on, $sformatf("%s: turbo latch %0d", how, dut.neogeo.turbo));
+        want_speed = on ? 2'd3 : {1'b0, dut.neogeo.SYSTEM_CDZ};
+        check(dut.neogeo.cd_speed == want_speed, $sformatf("%s: speed %0d, want %0d", how, dut.neogeo.cd_speed, want_speed));
+        wait_mbox(16'd12, 300.0);
+        wait_mbox(16'd14, 800.0);
+        check_dma_words(OTHER_WORDS_16, how);
+        // A read in flight at the restart is the last run's
+        for (int i = 0; i < host.log_q.size(); i++)
+            if (host.log_q[i].cmd == 16'h0180 && host.log_q[i].t_busy >= t_rel) begin
+                automatic logic [31:0] a = host.log_q[i].addr, n = host.log_q[i].len;
+                reads++;
+                if (on) check(a >= 32'h7400_0000 && a + n <= 32'h7409_3000,
+                              $sformatf("%s: a read of %0d bytes at %08x, outside the ring's window", how, n, a));
+                else    check(a[31:16] == 16'h7000 && a[11:0] == 0 && n == 32'd2352,
+                              $sformatf("%s: a read of %0d bytes at %08x, not a sector into a bank slot", how, n, a));
+            end
+        check(reads != 0, $sformatf("%s: no data slot read in the run", how));
+        if (!on) check(mon_bad == 0, $sformatf("%s: cd_ring was not silent: %0d clocks with a toggle of fr_req or rr_req, or a ring write", how, mon_bad));
+        mon_off = 0;
+        $display("%s: %0d data slot reads in the run", how, reads);
+        check_clean(how);
+    endtask
+
+    task automatic test_turbo();
+        test = "test_turbo";
+        turbo_run(1);
+        turbo_run(0);
+    endtask
+
+    // Word 32 of the wait counter's file for these settings, also with the counter out of the build. Turbo off: the speed
+    // follows CD/CDZ
+    function automatic logic [31:0] settings_word(input bit cdz, input bit lid_open, input logic [1:0] region, input bit in_reset);
+        logic [1:0] speed = {1'b0, cdz};
         logic [1:0] jumper = region == 2'd0 ? 2'b10 : region == 2'd1 ? 2'b01 : region == 2'd2 ? 2'b11 : 2'b00;
         return {24'd0, in_reset, lid_open, jumper, speed, ~lid_open ^ cdz, cdz};
     endfunction
@@ -1624,7 +1692,7 @@ module tb_topcd;
         test = "test_cd_settings";
         read_sys_config(v);
         check(v == sys_config(0, 0, 2'd0), $sformatf("CD, lid closed, US: FF011C %04x, want %04x", v, sys_config(0, 0, 2'd0)));
-        check_settings_file(v, settings_word(0, 0, 0, 0, 0), "defaults");
+        check_settings_file(v, settings_word(0, 0, 0, 0), "defaults");
         check(dut.neogeo.dbg_cur_status != 4'h0 || dut.neogeo.dbg_cur_lba != 0, "the drive is at STOP, LBA 0 already: the reset check below would prove nothing");
         st_was = dut.neogeo.CDD_STATUS;
         cmd_was = dut.neogeo.CDD_COMMAND_DATA;
@@ -1647,26 +1715,21 @@ module tb_topcd;
         end
         check(vb == 2, "no VBlank while the core is in reset");
         // The new values, taken while held as the host restores them, wait for the next run's record
-        check_settings_file(sys_config(0, 0, 2'd0), settings_word(0, 0, 0, 0, 0), "held in reset");
+        check_settings_file(sys_config(0, 0, 2'd0), settings_word(0, 0, 0, 0), "held in reset");
         host_cmd(16'h0011);
         wait_release(300.0);
         check(releases == rel + 1, "no release after Reset Exit");
         check(dut.neogeo.SYSTEM_CDZ, "CD/CDZ written during Reset Enter was not taken");
-`ifndef NEOGEO_WAIT_COUNTER
-        check(dut.neogeo.cd_speed == 2'd1, $sformatf("a release with CD/CDZ on reads at speed %0d", dut.neogeo.cd_speed));
-`endif
+        check(dut.neogeo.cd_speed == 2'd1, $sformatf("CD/CDZ on reads at speed %0d", dut.neogeo.cd_speed));
         wait_mbox(16'd12, 300.0);
         read_sys_config(v, 800.0);          // the program's steps 13 and 14 with the disc come first
         check(v == sys_config(1, 0, 2'd2), $sformatf("CDZ, lid closed, JP: FF011C %04x, want %04x", v, sys_config(1, 0, 2'd2)));
-        check_settings_file(v, settings_word(1, 0, 0, 2, 0), "CDZ, JP");
-        host.bfm.write32(32'hF000_0608, 32'd3);     // CD Speed 4x, and back
-        check_settings_file(v, settings_word(1, 0, 3, 2, 0), "CDZ, JP, 4x");
-        host.bfm.write32(32'hF000_0608, 32'd0);
+        check_settings_file(v, settings_word(1, 0, 2, 0), "CDZ, JP");
         // The lid: FF011C at once, and the drive holds OPEN. A CDZ reads 1 for open
         host.bfm.write32(32'hF000_060C, 32'd1);
         read_sys_config(v);
         check(v == sys_config(1, 1, 2'd2), $sformatf("CDZ, lid open, JP: FF011C %04x, want %04x", v, sys_config(1, 1, 2'd2)));
-        check_settings_file(v, settings_word(1, 1, 0, 2, 0), "CDZ, lid open, JP");
+        check_settings_file(v, settings_word(1, 1, 2, 0), "CDZ, lid open, JP");
         check(dut.neogeo.dbg_cur_status == 4'h5, $sformatf("lid open: the drive reads %x, not OPEN", dut.neogeo.dbg_cur_status));
         host.bfm.write32(32'hF000_060C, 32'd0);
         // Region US at once, and CD/CDZ written again unchanged, as the host may do: no reset
@@ -1682,9 +1745,7 @@ module tb_topcd;
         wait_release(300.0);
         check(releases == rel + 1, "changing CD/CDZ did not restart the core");
         check(dut.neogeo.status[2] == 0 && !dut.neogeo.SYSTEM_CDZ, "status[2] or SYSTEM_CDZ after the restart");
-`ifndef NEOGEO_WAIT_COUNTER
-        check(dut.neogeo.cd_speed == 2'd0, $sformatf("a release with CD/CDZ off reads at speed %0d", dut.neogeo.cd_speed));
-`endif
+        check(dut.neogeo.cd_speed == 2'd0, $sformatf("CD/CDZ off reads at speed %0d", dut.neogeo.cd_speed));
         check_clean("CD settings");
     endtask
 
@@ -1737,6 +1798,7 @@ module tb_topcd;
             "test_disc_swap_invalidates_bank": test_disc_swap_invalidates_bank();
             "test_disc_swap_during_cdda": test_disc_swap_during_cdda();
             "test_reset_core": test_reset_core();
+            "test_turbo":      test_turbo();
             "test_cd_settings": test_cd_settings();
             default: $fatal(1, "no test %s", name);
         endcase
@@ -1778,6 +1840,7 @@ module tb_topcd;
 `ifdef NEOGEO_WAIT_COUNTER
         run("test_wait_counter");
 `endif
+        run("test_turbo");          // after the wait counter's second file, whose fetch counts are cd_fetch's
         run("test_cd_settings");    // last: it leaves the core latched as a CDZ
         report();
         if (errors != 0) $fatal(1, "%0d failures", errors);
@@ -1794,7 +1857,7 @@ module tb_topcd;
     end
 
     initial begin
-        #(4.0e9);
+        #(6.0e9);           // test_turbo's two runs add about 0.9 s
         report();
         $fatal(1, "timeout");
     end

@@ -65,8 +65,8 @@
 // Clock crossings, source to destination:
 //   reset_n, dataslot_allcomplete (core_bridge_cmd.v, clk_74a), reconfiguring (pll_mvs_cfg.sv,
 //     clk_74a): same domain as the timer, which registers the result; no synchroniser there.
-//   core reset, SYSTEM_TYPE, video_mode, memory_card_enable, DIPSW, APF_Video_ratio, cont*_key
-//     (clk_74a) to CLK_96M: two flops per bit. Each bit stands alone.
+//   core reset, the settings of the menu, cont*_key (clk_74a) to CLK_96M: two flops per bit. Each bit stands alone: a multi-bit
+//     setting can show a mix of old and new for a clock while the user changes it.
 //   rtc_valid (clk_74a) to CLK_96M: two flops, rtc[64]. rtc[63:0] is a function of registers held by
 //     core_bridge_cmd.v since before rtc_valid rose, and the host sends them once: no flops.
 //   Block count (clk_74a) to CLK_96M: Gray coded, two flops, steps one at a time. The ring's words
@@ -108,8 +108,6 @@ module apf_loader #(
     input      [31:0] datatable_q,
     input      [31:0] cont1_key,
     input      [31:0] cont2_key,
-    input      [31:0] cont3_key,
-    input      [31:0] cont4_key,
 
     output reg        ioctl_download = 0,
     output reg  [7:0] ioctl_index = 0,
@@ -119,8 +117,6 @@ module apf_loader #(
 
     output     [15:0] joystick_0,           // MiSTer order: 0 R, 1 L, 2 D, 3 U, 4-7 A-D, 8 Start,
     output     [15:0] joystick_1,           // 9 Select, 10 Coin
-    output     [15:0] joystick_2,
-    output     [15:0] joystick_3,
 
     output     [63:0] status,
     output     [31:0] cfg,
@@ -128,6 +124,8 @@ module apf_loader #(
     output     [23:0] v2_offset,
     output     [23:0] v2rom_mask,
     output            width320,
+    output      [7:0] screen_x,             // CLK_96M, signed, see video_out
+    output      [7:0] screen_y,
     output      [2:0] video_slot,
     output            mvs,                  // pll_pocket: clk_74a
     output            apf_core_reset,
@@ -149,8 +147,9 @@ module apf_loader #(
     output reg [15:0] sd_buff_dout = 0,
     input      [15:0] sram_buff_dout,
     input      [15:0] card_buff_dout,
-    // Reset Core's save, clk_74a: a data slot write of core_bridge_cmd, whose ports are these while rs_busy
+    // Reset Core's save, clk_74a: a data slot write of core_bridge_cmd, whose ports are these while rs_cmd
     output            rs_busy,
+    output            rs_cmd,               // from RS_ISSUE: a host command that started before rs_busy has been answered
     output reg        rs_write = 0,
     output     [15:0] rs_slot,
     output     [31:0] rs_bridge,
@@ -163,7 +162,7 @@ module apf_loader #(
 
 // ---- Settings, clk_74a ----
 
-reg  [2:0] dipsw = 3'b111;      // {DIPSW[7:6], DIPSW[0]}
+reg  [2:0] dipsw = 0;           // {freeze, freeplay, settings mode}
 reg        system_type = 1;
 reg        memory_card_enable = 0;
 reg        video_mode = 0;
@@ -176,14 +175,19 @@ reg  [2:0] c1_wait = 0;
 reg        ms5p = 0, xram = 0, adpcma_ext = 0;
 reg [23:0] v2_offset_r = 0, v2rom_mask_r = 0;
 reg        cd_type = 0;         // CD build: 1 = CDZ
-reg  [1:0] cd_region = 0, cd_speed = 0;
+reg  [1:0] cd_region = 0;
 reg        cd_lid = 0;
+reg        cd_turbo = 0;
+reg  [1:0] cpu_clock = 0, stereo_mix = 0, cart_region = 0, lr_buttons = 0;
+reg  [7:0] screen_x_r = 0, screen_y_r = 0;
+reg  [3:0] snd_mute = 0;
+reg  [5:0] ch_mute = 0;
 
 wire settings_wr = bridge_wr && bridge_addr[31:12] == 20'hF0000;
 
 always @(posedge clk_74a) if (settings_wr)
     case (bridge_addr[11:0])
-        REG_DIPSW_OLD, REG_DIPSW:             dipsw              <= {bridge_wr_data[7:6], bridge_wr_data[0]};
+        REG_DIPSW:                            dipsw              <= bridge_wr_data[2:0];
         REG_SYSTEM_TYPE_OLD, REG_SYSTEM_TYPE: system_type        <= bridge_wr_data[0];
         REG_MEMCARD_OLD, REG_MEMCARD:         memory_card_enable <= bridge_wr_data[0];
         REG_VIDEO_MODE:                       video_mode         <= bridge_wr_data[0];
@@ -199,16 +203,24 @@ always @(posedge clk_74a) if (settings_wr)
         REG_MS5P:                             ms5p               <= bridge_wr_data[0];
         REG_XRAM:                             xram               <= bridge_wr_data[0];
         REG_ADPCMA_EXT:                       adpcma_ext         <= bridge_wr_data[0];
+        REG_CPU_CLOCK:                        cpu_clock          <= bridge_wr_data[1:0];
+        REG_LR_BUTTONS:                       lr_buttons         <= bridge_wr_data[1:0];
+        REG_SCREEN_X:                         screen_x_r         <= bridge_wr_data[7:0];
+        REG_SCREEN_Y:                         screen_y_r         <= bridge_wr_data[7:0];
+        REG_CH_MUTE:                          ch_mute            <= bridge_wr_data[5:0];
+        REG_SND_MUTE:                         snd_mute           <= bridge_wr_data[3:0];
+        REG_STEREO_MIX:                       stereo_mix         <= bridge_wr_data[1:0];
+        REG_CART_REGION:                      cart_region        <= bridge_wr_data[1:0];
         default: ;
     endcase
 
-// The CD core's own settings, MiSTer's status[2], [11:10], [30:29] and [15]
+// The CD core's own settings, MiSTer's status[2], [11:10] and [15], and Turbo 4x, status[12]
 always @(posedge clk_74a) if (CD_BUILD && settings_wr)
     case (bridge_addr[11:0])
         REG_CD_TYPE:   cd_type   <= bridge_wr_data[0];
         REG_CD_REGION: cd_region <= bridge_wr_data[1:0];
-        REG_CD_SPEED:  cd_speed  <= bridge_wr_data[1:0];
         REG_CD_LID:    cd_lid    <= bridge_wr_data[0];
+        REG_CD_TURBO:  cd_turbo  <= bridge_wr_data[0];
         default: ;
     endcase
 
@@ -270,6 +282,7 @@ reg [28:0] rs_time = 0;
 wire rs_start = settings_wr && bridge_addr[11:0] == REG_CORE_RESET && bridge_wr_data[0];
 
 assign rs_busy   = rs_st != RS_IDLE;
+assign rs_cmd    = rs_st == RS_ISSUE || rs_st == RS_LOW || rs_st == RS_DONE;
 assign rs_slot   = rs_backup ? 16'h0102 : 16'h0101;
 assign rs_bridge = rs_backup ? 32'h7000_0000 : 32'h6000_0000;
 assign rs_length = rs_backup ? 32'd65536 : 32'd8192;
@@ -278,7 +291,7 @@ always @(posedge clk_74a) begin
     rs_time <= rs_time + 1'd1;
     case (rs_st)
         RS_FREE:  if (rs_host_free) rs_st <= RS_ISSUE;
-        RS_ISSUE: begin                         // the parameters are on the ports since RS_FREE; now the rising edge
+        RS_ISSUE: begin                         // the parameters are on the ports since this clock; the edge follows
             rs_write <= 1;
             rs_st    <= RS_LOW;
         end
@@ -311,7 +324,9 @@ reg        first_load = 1;
 wire reset_restart = ~reset_n | ~dataslot_allcomplete | reconfiguring | slot_wr
                    | rs_start | rs_busy
                    | (settings_wr && bridge_addr[11:0] == REG_SYSTEM_TYPE && bridge_wr_data[0] != system_type)
-                   | (CD_BUILD && settings_wr && bridge_addr[11:0] == REG_CD_TYPE && bridge_wr_data[0] != cd_type);
+                   | (settings_wr && bridge_addr[11:0] == REG_CPU_CLOCK && bridge_wr_data[1:0] != cpu_clock)
+                   | (CD_BUILD && settings_wr && bridge_addr[11:0] == REG_CD_TYPE && bridge_wr_data[0] != cd_type)
+                   | (CD_BUILD && settings_wr && bridge_addr[11:0] == REG_CD_TURBO && bridge_wr_data[0] != cd_turbo);
 
 always @(posedge clk_74a) begin
     if (reset_restart) reset_timer <= 26'(RESET_HOLD_CLKS);
@@ -322,17 +337,27 @@ end
 
 // ---- Settings the menu reads back, clk_74a ----
 
-reg [2:0] settings_rd = 0;
+reg [31:0] settings_rd = 0;
 
 always @(posedge clk_74a) if (bridge_rd && bridge_addr[31:12] == 20'hF0000)
     case (bridge_addr[11:0])
-        REG_SYSTEM_TYPE: settings_rd <= {2'd0, system_type};
-        REG_VIDEO_MODE:  settings_rd <= {2'd0, video_mode};
-        REG_VIDEO_RATIO: settings_rd <= apf_video_ratio;
-        REG_CD_TYPE:     settings_rd <= {2'd0, cd_type};
-        REG_CD_REGION:   settings_rd <= {1'd0, cd_region};
-        REG_CD_SPEED:    settings_rd <= {1'd0, cd_speed};
-        REG_CD_LID:      settings_rd <= {2'd0, cd_lid};
+        REG_SYSTEM_TYPE: settings_rd <= 32'(system_type);
+        REG_VIDEO_MODE:  settings_rd <= 32'(video_mode);
+        REG_VIDEO_RATIO: settings_rd <= 32'(apf_video_ratio);
+        REG_DIPSW:       settings_rd <= 32'(dipsw);
+        REG_MEMCARD:     settings_rd <= 32'(memory_card_enable);
+        REG_CPU_CLOCK:   settings_rd <= 32'(cpu_clock);
+        REG_LR_BUTTONS:  settings_rd <= 32'(lr_buttons);
+        REG_SCREEN_X:    settings_rd <= 32'($signed(screen_x_r));
+        REG_SCREEN_Y:    settings_rd <= 32'($signed(screen_y_r));
+        REG_CH_MUTE:     settings_rd <= 32'(ch_mute);
+        REG_SND_MUTE:    settings_rd <= 32'(snd_mute);
+        REG_STEREO_MIX:  settings_rd <= 32'(stereo_mix);
+        REG_CART_REGION: settings_rd <= 32'(cart_region);
+        REG_CD_TYPE:     settings_rd <= 32'(cd_type);
+        REG_CD_REGION:   settings_rd <= 32'(cd_region);
+        REG_CD_LID:      settings_rd <= 32'(cd_lid);
+        REG_CD_TURBO:    settings_rd <= 32'(cd_turbo);
         default:         settings_rd <= 0;
     endcase
 
@@ -469,16 +494,17 @@ always @(posedge clk_74a)
 
 // ---- Crossing to CLK_96M ----
 
-function automatic [9:0] pick_keys(input [31:0] k);
-    pick_keys = {k[15:14], k[7:0]};
+function automatic [11:0] pick_keys(input [31:0] k);
+    pick_keys = {k[15:14], k[9:0]};
 endfunction
 
-localparam int SYNC_W = 3 + 40 + 3 + 3 + 3 + 4 + 1 + 6;
+localparam int SYNC_W = 3 + 24 + 3 + 3 + 3 + 4 + 1 + 4 + 8 + 16 + 10 + 1;
 
-wire [SYNC_W-1:0] sync_in = {core_reset_74, first_load, rtc_valid, pick_keys(cont4_key), pick_keys(cont3_key),
+wire [SYNC_W-1:0] sync_in = {core_reset_74, first_load, rtc_valid,
                              pick_keys(cont2_key), pick_keys(cont1_key), apf_video_ratio, dipsw,
                              memory_card_enable, video_mode, system_type, blocks_gray, sv_tog,
-                             cd_type, cd_region, cd_speed, cd_lid};
+                             cd_type, cd_region, cd_lid, cd_turbo,
+                             cpu_clock, stereo_mix, cart_region, lr_buttons, screen_x_r, screen_y_r, snd_mute, ch_mute};
 reg  [SYNC_W-1:0] sync_1 = 0, sync_2 = 0;
 
 always @(posedge CLK_96M) begin
@@ -487,33 +513,41 @@ always @(posedge CLK_96M) begin
 end
 
 wire        core_reset_s, first_load_s, rtc_valid_s, memory_card_s, video_mode_s, system_type_s, sv_tog_s;
-wire        cd_type_s, cd_lid_s;
-wire  [1:0] cd_region_s, cd_speed_s;
-wire  [9:0] key4_s, key3_s, key2_s, key1_s;
+wire        cd_type_s, cd_lid_s, cd_turbo_s;
+wire  [1:0] cd_region_s;
+wire [11:0] key2_s, key1_s;
+wire  [1:0] cpu_clock_s, stereo_mix_s, cart_region_s, lr_buttons_s;
+wire  [3:0] snd_mute_s;
+wire  [5:0] ch_mute_s;
 wire  [2:0] ratio_s, dipsw_s;
 wire  [3:0] blocks_s;
-assign {core_reset_s, first_load_s, rtc_valid_s, key4_s, key3_s, key2_s, key1_s, ratio_s, dipsw_s,
+assign {core_reset_s, first_load_s, rtc_valid_s, key2_s, key1_s, ratio_s, dipsw_s,
         memory_card_s, video_mode_s, system_type_s, blocks_s, sv_tog_s,
-        cd_type_s, cd_region_s, cd_speed_s, cd_lid_s} = sync_2;
+        cd_type_s, cd_region_s, cd_lid_s, cd_turbo_s,
+        cpu_clock_s, stereo_mix_s, cart_region_s, lr_buttons_s, screen_x, screen_y, snd_mute_s, ch_mute_s} = sync_2;
 
-function automatic [15:0] joy(input [9:0] k);   // {Start, Select, Y, X, B, A, R, L, D, U} of the APF map
-    joy = {5'd0, k[8], k[8], k[9], k[7:4], k[0], k[1], k[2], k[3]};
+// {Start, Select, R1, L1, Y, X, B, A, R, L, D, U} of the APF map. L1 is the A+B button and R1 C+D, MiSTer's joystick[13:12];
+// L/R Buttons can make either of them the ABC button, joystick[11], as MiSTer's J1 line has it
+function automatic [15:0] joy(input [11:0] k, input [1:0] lr);
+    joy = {2'd0, k[9] & lr != 2'd2, k[8] & lr != 2'd1, k[8] & lr == 2'd1 | k[9] & lr == 2'd2,
+           k[10], k[10], k[11], k[7:4], k[0], k[1], k[2], k[3]};
 endfunction
 
-assign joystick_0 = joy(key1_s);
-assign joystick_1 = joy(key2_s);
-assign joystick_2 = joy(key3_s);
-assign joystick_3 = joy(key4_s);
+assign joystick_0 = joy(key1_s, lr_buttons_s);
+assign joystick_1 = joy(key2_s, lr_buttons_s);
 
 assign apf_core_reset = core_reset_s;
 assign width320       = ratio_s[2];
 assign video_slot     = ratio_s;
 
-// MiSTer's bits: 0 = loading, 1 = MVS, 3 = PAL, 4 = card unplugged (neogeo.sv:1311), 14 = manual reset
-// (neogeo.sv:170), 16 = 304 wide (neogeo.sv:159)
-// The CD build adds 2 CD/CDZ, 10-11 region, 15 lid open and 29-30 speed (cd.sv)
-assign status = {33'd0, cd_speed_s, 12'd0, ~ratio_s[2], cd_lid_s, core_reset_s & ~first_load_s, 2'd0, cd_region_s,
-                 ~dipsw_s[2:1], ~dipsw_s[0], 2'd0, memory_card_s, video_mode_s, cd_type_s, system_type_s,
+// MiSTer's bits: 0 = loading, 1 = MVS, 3 = PAL, 4 = card unplugged (neogeo.sv:1311), 5-6 stereo mix, 7-9 DIP settings, freeplay and
+// freeze, 14 = manual reset (neogeo.sv:170), 16 = 304 wide (neogeo.sv:159), 25-28 FM, ADPCM-A, ADPCM-B, PSG mutes,
+// 57-62 the ADPCM-A channel mutes. 45-46 are the Pocket's 68K clock, 31-32 its cart region.
+// The CD build adds 2 CD/CDZ, 10-11 region, 12 Turbo 4x and 15 lid open. 29-30, MiSTer's CD speed, stay 0: the top sets the speed
+// 43-44, MiSTer's multitaps, stay off: no Pocket core has them to check against, and they cannot be tested here (owner, 2026-11-11)
+assign status = {1'd0, ch_mute_s, 10'd0, cpu_clock_s, 2'd0, 10'd0,
+                 cart_region_s, 2'd0, snd_mute_s, 8'd0, ~ratio_s[2], cd_lid_s, core_reset_s & ~first_load_s, 1'd0, cd_turbo_s, cd_region_s,
+                 dipsw_s, stereo_mix_s, memory_card_s, video_mode_s, cd_type_s, system_type_s,
                  core_reset_s & first_load_s};
 
 // uPD4990 layout (upd4990.v:51). APF words, from the 0x0090 command in Analogue's developer docs:
@@ -638,7 +672,7 @@ wire [15:0] sv_wr_le = sv_half ? {sv_data[7:0], sv_data[15:8]} : {sv_data[23:16]
 assign bk_we          = sv_we;
 assign sram_addr      = {sv_addr, sv_half};
 assign memcard_addr   = {sv_addr[10:0], sv_half};
-assign bridge_rd_data = bridge_addr[31:28] == 4'hF ? {29'd0, settings_rd} : sv_rd_word;
+assign bridge_rd_data = bridge_addr[31:28] == 4'hF ? settings_rd : sv_rd_word;
 
 always @(posedge CLK_96M) begin
     sv_tog_d <= sv_tog_s;

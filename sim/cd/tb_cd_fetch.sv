@@ -6,7 +6,8 @@
 // (at your option) any later version.
 
 // cd_fetch between cd_host (with core_bridge_cmd.v and host_bfm serving prepare.py's disc of
-// tools/make_test_disc.py --data-sectors 520) and MiSTer's real cd_sys, with the 68K idle. The glue between
+// tools/make_test_disc.py --data-sectors 520) and MiSTer's real cd_sys, with the 68K idle but for m68k_read's
+// reads. The glue between
 // cd_fetch and cd_sys is neogeo_pocket.sv's, copied: the 16-clock ioctl_wr_x extender and the data/CDDA
 // split. The bench asks for sectors as cdd_drive does: a toggle of req_valid, only when req_valid ==
 // req_done and the sink is ready (CD_DATA_WR_READY, or CDDA_WR_READY for audio). The disc is opened in
@@ -16,7 +17,7 @@
 // test_stream_byte_order          sector 16: cd_sys's header registers hold 00:02:16 mode 1 (lba + 150) and
 //                                 its cache the 2,048 bytes of the sector number as big-endian words
 // test_prefetch_hits              17, 18 and 19 in turn: no host read starts between a request and its stream
-// test_miss_after_seek            500: one host read for it, then reads of 501, 502 and 503 (the prefetch)
+// test_miss_after_seek            500: one host read for it, then reads of 501 to 505 (the prefetch)
 // test_audio_stream_to_cdda       the first audio sector: 1,176 CDDA_WR edges, cdda.v's buffer holds the
 //                                 tone's first 588 stereo samples, the data cache untouched
 // test_fetch_error_reports_position  err 1 (fail_next): req_done toggles, fetch_err set, nothing streamed, the
@@ -25,6 +26,10 @@
 // test_reset_abandons_stream      nRESET mid-stream: the stream stops and req_done does not move, as Task 5's
 //                                 contract (a) needs with cdd_drive mirroring req_valid <= req_done
 // test_debug_counts               NEOGEO_WAIT_COUNTER's counts, each by its own event, the worst host read as the bench saw it
+// test_turbo_waits_for_the_unmask Turbo 4x holds a sector while the decoder's interrupt is masked, then until the 68K
+//                                 reads $10F688 (or 3.3 ms), and 50 ms at most; 1x, 2x and a decoder off never wait
+// test_turbo_open_interrupt_is_2x Turbo 4x, the interrupt open since the last sector: the next comes 6.7 ms after it, a
+//                                 CDZ's time; masked and opened in between, 3.3 ms; 2x as ever
 `timescale 1ns/1ps
 module tb_cd_fetch;
     import host_bfm_pkg::*;
@@ -80,7 +85,9 @@ module tb_cd_fetch;
     wire        fr_req, fr_done, fr_err;
     wire [15:0] fr_slot;
     wire [31:0] fr_offset, bank_rd_q;
-    wire  [1:0] fr_bank_slot;
+    wire  [2:0] fr_bank_slot;
+    wire [31:0] fr_bridge = 32'h7000_0000 | {17'd0, fr_bank_slot, 12'd0};    // neogeo_pocket.sv's, copied
+    wire [31:0] fr_len = 32'd2352;
     wire [11:0] bank_rd_addr;
 
     cd_host chost (
@@ -94,7 +101,7 @@ module tb_cd_fetch;
         .bridge_addr, .bridge_wr, .bridge_wr_data, .bridge_rd, .bridge_rd_data(host_rd_data),
         .mr_req(1'b0), .mr_kind(2'd0), .mr_slot(16'd0), .mr_offset(32'd0), .mr_len(32'd0), .mr_bank_slot(2'd0),
         .mr_done(), .mr_err(), .rs_hold(1'b0), .rs_free(),
-        .fr_req, .fr_slot, .fr_offset, .fr_bank_slot, .fr_done, .fr_err,
+        .fr_req, .fr_slot, .fr_offset, .fr_bridge, .fr_len, .fr_done, .fr_err,
         .ws_req(1'b0), .ws_done(), .ws_err(),
         .bank_rd_addr, .bank_rd_q, .bank_rd_addr_74(12'd0), .bank_rd_q_74(),
         .path_addr(8'd0), .path_wr(1'b0), .path_wdata(32'd0), .path_q()
@@ -140,17 +147,20 @@ module tb_cd_fetch;
     wire CDDA_DOWNLOAD = cd_dl_download & cd_dl_audio;
     wire CDDA_WR = ioctl_wr_x & CDDA_DOWNLOAD;
 
-    // ---- cd_sys, the 68K idle ----
+    // ---- cd_sys, the 68K idle but for the reads m68k_read makes ----
     wire [15:0] M68K_DATA;
     logic       clk_68k_en = 0;
+    logic [1:0] cd_speed = 0;
+    logic [23:1] m68k_addr = 0;
+    logic       m68k_nas = 1;
     always @(posedge clk48) clk_68k_en <= ~clk_68k_en;
 
     cd_sys #(.MCLK(48335658)) cdsystem (
         .nRESET, .clk_sys(clk48), .CLK_68KCLK_EN(clk_68k_en),
-        .M68K_ADDR(23'd0), .M68K_DATA, .A22Z(1'b0), .A23Z(1'b0),
-        .nLDS(1'b1), .nUDS(1'b1), .M68K_RW(1'b1), .nAS(1'b1), .nDTACK(1'b1),
+        .M68K_ADDR(m68k_addr), .M68K_DATA, .A22Z(1'b0), .A23Z(1'b0),
+        .nLDS(m68k_nas), .nUDS(m68k_nas), .M68K_RW(1'b1), .nAS(m68k_nas), .nDTACK(1'b1),
         .nBR(), .nBG(1'b1), .nBGACK(),
-        .SYSTEM_CDx(1'b1), .CD_REGION(2'd0), .CD_SPEED(2'd0), .CD_LID(1'b1),
+        .SYSTEM_CDx(1'b1), .CD_REGION(2'd0), .CD_SPEED(cd_speed), .CD_LID(1'b1),
         .CD_VIDEO_EN(), .CD_FIX_EN(), .CD_SPR_EN(), .CD_nRESET_Z80(),
         .CD_TR_WR_SPR(), .CD_TR_WR_PCM(), .CD_TR_WR_Z80(), .CD_TR_WR_FIX(),
         .CD_TR_RD_FIX(), .CD_TR_RD_SPR(), .CD_TR_RD_Z80(), .CD_TR_RD_PCM(),
@@ -308,8 +318,8 @@ module tb_cd_fetch;
         check_sector_in_cache(500);
         // The prefetch follows
         wait_quiet();
-        for (int lba = 501; lba <= 503; lba++) check(was_read(n0, lba), $sformatf("sector %0d not prefetched", lba));
-        check(!was_read(n0, 504), "more than three sectors prefetched");
+        for (int lba = 501; lba <= 505; lba++) check(was_read(n0, lba), $sformatf("sector %0d not prefetched", lba));
+        check(!was_read(n0, 506), "more than five sectors prefetched");
     endtask
 
     task automatic test_audio_stream_to_cdda();
@@ -346,7 +356,7 @@ module tb_cd_fetch;
         check(streams == s0, "a failed sector was streamed");
         check(host.log_q.size() > n0 && host.log_q[n0].err == 1 && host.log_q[n0].offset == 300 * SECTOR,
               "the host did not fail the read of sector 300");
-        for (int k = 0; k < 4; k++)
+        for (int k = 0; k < 6; k++)
             check(!(dut.valid[k] && dut.tag_lba[k] == 300), $sformatf("slot %0d holds sector 300 after err 1", k));
         // The same sector again: read, streamed, fetch_err cleared
         s0 = streams;
@@ -527,7 +537,7 @@ module tb_cd_fetch;
 
         // A reset in a stream
         snap(was);
-        request(310, 310, 0, t);
+        request(320, 320, 0, t);
         @(posedge cd_dl_download);
         repeat (100) @(posedge clk48);
         nRESET <= 0;
@@ -545,6 +555,147 @@ module tb_cd_fetch;
         check(fc[4] != 0 && int'(fc[4]) >= f_max - 1 && int'(fc[4]) <= f_max + 1, $sformatf("worst host read %0d clocks, the bench saw %0d", fc[4], f_max));
     endtask
 
+    // Turbo 4x is no real drive, and it waits for the program: with the decoder on and its interrupt masked, the next
+    // sector does not take the decoder until the unmask, or 50 ms. The BIOS's directory scan masks it for 9 ms a sector,
+    // three sectors' time at 4x, and each sector lost cost it a seek. At 1x and 2x nothing waits, as a console's drive
+    // A sector asked for and streamed, then ms more: whether it took the decoder, which may be as its stream ends
+    task automatic sector_then(input int lba, input real ms, output bit flipped);
+        automatic logic bank = cdsystem.CACHE_RD_BANK;
+        realtime t;
+        request(lba, lba, 0, t);
+        wait_done();
+        #(ms * 1.0e6);
+        @(posedge clk48);
+        flipped = cdsystem.CACHE_RD_BANK != bank;
+    endtask
+
+    // A word read by the 68K, as long as a bus cycle at 12 MHz
+    task automatic m68k_read(input logic [23:0] a);
+        @(posedge clk48);
+        m68k_addr = a[23:1];
+        m68k_nas = 0;
+        #(330.0);
+        @(posedge clk48);
+        m68k_nas = 1;
+    endtask
+
+    task automatic test_turbo_waits_for_the_unmask();
+        bit flipped;
+        logic bank;
+        test = "test_turbo_waits_for_the_unmask";
+        wait_quiet();
+        cdsystem.LC8951.DECEN = 1;
+        cdsystem.REG_FF0002 = 16'h0000;         // the decoder's interrupt masked
+        // 2x: the sector takes the decoder when its time has passed, masked or not
+        cd_speed = 2'd1;
+        sector_then(100, 20.0, flipped);
+        sector_then(101, 20.0, flipped);
+        check(flipped, "2x: a sector waited behind the masked interrupt");
+        // 4x: it waits for the unmask
+        cd_speed = 2'd3;
+        sector_then(102, 20.0, flipped);
+        check(!flipped, "Turbo: a sector took the decoder with its interrupt masked");
+        bank = cdsystem.CACHE_RD_BANK;
+        // A read of the count before the unmask does not let it in
+        m68k_read(24'h10F688);
+        cdsystem.REG_FF0002 = 16'h0500;
+        // Not at the unmask itself: the BIOS opens the interrupt and then reads its count of sectors left at $10F688,
+        // and an interrupt between the two made it skip a sector. A VBlank may come between them, so no time is safe:
+        // the sector waits for the read. Real sectors come at any time, so this is still faithful
+        #(1.0e6);
+        check(cdsystem.CACHE_RD_BANK == bank, "Turbo: the sector took the decoder before the count was read");
+        m68k_read(24'h10F686);
+        #(20.0e3);
+        check(cdsystem.CACHE_RD_BANK == bank, "Turbo: a read of another word let the sector in");
+        m68k_read(24'h10F688);
+        #(20.0e3);
+        check(cdsystem.CACHE_RD_BANK != bank, "Turbo: the sector did not take the decoder 20 us after the count was read");
+        // A program that never reads it gets the sector one 4x sector time after the unmask
+        cdsystem.REG_FF0002 = 16'h0000;
+        sector_then(105, 20.0, flipped);
+        check(!flipped, "Turbo: a sector took the decoder with its interrupt masked");
+        bank = cdsystem.CACHE_RD_BANK;
+        cdsystem.REG_FF0002 = 16'h0500;
+        #(3.0e6);
+        check(cdsystem.CACHE_RD_BANK == bank, "Turbo: unread, the sector took the decoder within 3 ms of the unmask");
+        #(0.5e6);
+        check(cdsystem.CACHE_RD_BANK != bank, "Turbo: unread, the sector did not take the decoder 3.5 ms after the unmask");
+        // and no longer than 50 ms, for a program that polls with the interrupt masked
+        cdsystem.REG_FF0002 = 16'h0000;
+        bank = cdsystem.CACHE_RD_BANK;
+        sector_then(103, 45.0, flipped);
+        check(!flipped, "Turbo: the hold ran out before 50 ms");
+        #(10.0e6);
+        @(posedge clk48);
+        check(cdsystem.CACHE_RD_BANK != bank, "Turbo: the hold did not run out at 50 ms");
+        // with the decoder off nothing waits
+        cdsystem.LC8951.DECEN = 0;
+        sector_then(104, 20.0, flipped);
+        check(flipped, "Turbo: a sector waited with the decoder off");
+        cd_speed = 2'd0;
+        wait_quiet();
+    endtask
+
+    // Poll the count at $10F688, as a program waiting for a sector does, until a sector takes the decoder
+    task automatic poll_until_flip(input real limit_ms, output realtime t);
+        automatic logic bank = cdsystem.CACHE_RD_BANK;
+        automatic realtime limit = $realtime + limit_ms * 1.0e6;
+        while (cdsystem.CACHE_RD_BANK == bank && $realtime < limit) begin
+            m68k_read(24'h10F688);
+            #(50.0e3);
+        end
+        check(cdsystem.CACHE_RD_BANK != bank, $sformatf("no sector took the decoder in %0.0f ms", limit_ms));
+        t = $realtime;
+    endtask
+
+    // A program that leaves the decoder's interrupt open between sectors gives no sign of when it is ready for the
+    // next: it counts on the drive's own sector time. Samurai Shodown RPG's directory cache (EXT_SYS.PRG, $132554)
+    // parses each of the 88 directory sectors in its main loop that way, and at 3.3 ms a sector the next one's
+    // interrupt replaced the buffer under the parse: the records lost sent a later load to LBA 0. So with Turbo 4x a
+    // sector that follows one taken with the interrupt open ever since comes at a CDZ's sector time, 6.7 ms. A
+    // program that masks between sectors, as the BIOS's loaders and the game's own, still gets 3.3 ms
+    task automatic test_turbo_open_interrupt_is_2x();
+        realtime t, t0, t1, t2;
+        test = "test_turbo_open_interrupt_is_2x";
+        wait_quiet();
+        cdsystem.LC8951.DECEN = 1;
+        cdsystem.REG_FF0002 = 16'h0500;         // open, and never masked below until said
+        cd_speed = 2'd3;
+        request(110, 110, 0, t);
+        wait_done();
+        poll_until_flip(60.0, t0);
+        request(111, 111, 0, t);
+        wait_done();
+        poll_until_flip(60.0, t0);              // the first with the interrupt open since the sector before it
+        request(112, 112, 0, t);
+        wait_done();
+        poll_until_flip(60.0, t1);
+        check((t1 - t0) / 1.0e6 >= 6.5 && (t1 - t0) / 1.0e6 <= 7.5,
+              $sformatf("Turbo: with the interrupt open since the last sector the next came %0.2f ms after it, a CDZ's 6.67 expected", (t1 - t0) / 1.0e6));
+        // The mask and the unmask between two sectors are the program's handshake: 4x
+        request(113, 113, 0, t);
+        wait_done();
+        cdsystem.REG_FF0002 = 16'h0000;
+        #(0.5e6);
+        cdsystem.REG_FF0002 = 16'h0500;
+        poll_until_flip(60.0, t2);
+        check((t2 - t1) / 1.0e6 >= 3.3 && (t2 - t1) / 1.0e6 <= 5.0,
+              $sformatf("Turbo: masked and opened since the last sector, the next came %0.2f ms after it, 3.33 expected", (t2 - t1) / 1.0e6));
+        // At 2x nothing changes: the sector time alone
+        cd_speed = 2'd1;
+        request(114, 114, 0, t);
+        wait_done();
+        poll_until_flip(60.0, t0);
+        request(115, 115, 0, t);
+        wait_done();
+        poll_until_flip(60.0, t1);
+        check((t1 - t0) / 1.0e6 >= 6.5 && (t1 - t0) / 1.0e6 <= 7.5, $sformatf("2x: the next sector came %0.2f ms after the last", (t1 - t0) / 1.0e6));
+        cdsystem.LC8951.DECEN = 0;
+        cdsystem.REG_FF0002 = 16'h0000;
+        cd_speed = 2'd0;
+        wait_quiet();
+    endtask
+
     task automatic run(input string name);
         tests++;
         case (name)
@@ -556,6 +707,8 @@ module tb_cd_fetch;
             "test_disc_change_invalidates":      test_disc_change_invalidates();
             "test_reset_abandons_stream":        test_reset_abandons_stream();
             "test_debug_counts":                 test_debug_counts();
+            "test_turbo_waits_for_the_unmask":   test_turbo_waits_for_the_unmask();
+            "test_turbo_open_interrupt_is_2x":   test_turbo_open_interrupt_is_2x();
             default: $fatal(1, "no test %s", name);
         endcase
         $display("%0s done at %0.1f ms, %0d failures so far", name, $realtime / 1.0e6, errors);
@@ -576,6 +729,8 @@ module tb_cd_fetch;
         run("test_disc_change_invalidates");
         run("test_reset_abandons_stream");
         run("test_debug_counts");
+        run("test_turbo_waits_for_the_unmask");
+        run("test_turbo_open_interrupt_is_2x");
         if (errors != 0) $fatal(1, "%0d failures", errors);
         $display("cd_fetch: %0d tests passed", tests);
         $finish;

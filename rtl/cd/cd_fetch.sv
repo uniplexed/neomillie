@@ -6,15 +6,15 @@
 // (at your option) any later version.
 
 // The sector streamer, at CLK_48M: what MiSTer's ARM does when megacdd sends a sector. cdd_drive asks for a
-// sector of a file (req_file, req_file_lba) with a toggle of req_valid; this finds it in cd_host's bank of 4
+// sector of a file (req_file, req_file_lba) with a toggle of req_valid; this finds it in cd_host's bank of 6
 // sectors or reads it there from the host (fr_*, slot 2 for file 0, the picked file, else slot 3), streams
-// it to cd_sys as MiSTer's HPS does, and toggles req_done. Then it prefetches the next three sectors of the
+// it to cd_sys as MiSTer's HPS does, and toggles req_done. Then it prefetches the next five sectors of the
 // same file into the other slots, one host read at a time, while no request waits.
 //
 // A slot's tag is {valid, file, file_lba}: by file position, not disc LBA, since with the PREGAP keyword a
 // disc LBA has no BIN sector. A slot being read from the host has its new tag and valid low; it becomes
 // valid only if the read answers err 0 and the disc did not go meanwhile. The slot for a new sector is one
-// outside the window of the sector asked for and its next three (any slot outside that window is of no use
+// outside the window of the sector asked for and its next five (any slot outside that window is of no use
 // to a sequential read, so this is the least recently useful one).
 //
 // The stream: 1,176 words {byte 2i+1, byte 2i} from the bank's words {b0, b1, b2, b3} (word 2k is
@@ -53,7 +53,7 @@ module cd_fetch #(
     output reg        fr_req = 0,
     output reg [15:0] fr_slot = 0,
     output reg [31:0] fr_offset = 0,
-    output reg  [1:0] fr_bank_slot = 0,
+    output reg  [2:0] fr_bank_slot = 0,
     input             fr_done,
     input             fr_err,
     output reg [11:0] bank_rd_addr = 0,
@@ -75,6 +75,7 @@ module cd_fetch #(
 
 localparam int WORDS  = 588;
 localparam int STREAM = 2 * WORDS;
+localparam int SLOTS  = 6;
 
 typedef enum logic [3:0] {
     S_IDLE, S_LOOK, S_DECIDE, S_OFF1, S_OFF2, S_OFF3, S_WAIT_F, S_SINK, S_STREAM, S_TAIL, S_DONE, S_PF_LOOK, S_PF_DECIDE
@@ -83,17 +84,17 @@ typedef enum logic [3:0] {
 state_t state = S_IDLE;
 
 // ---- The bank's tags ----
-reg  [3:0] valid = 0;
-reg  [6:0] tag_file [0:3];
-reg [23:0] tag_lba  [0:3];
-initial for (int n = 0; n < 4; n++) begin
+reg  [SLOTS-1:0] valid = 0;
+reg  [6:0] tag_file [0:SLOTS-1];
+reg [23:0] tag_lba  [0:SLOTS-1];
+initial for (int n = 0; n < SLOTS; n++) begin
     tag_file[n] = 0;
     tag_lba[n]  = 0;
 end
 
 // ---- The host read in flight ----
 reg        fbusy = 0, fabandon = 0, pf_issue = 0, stale = 0;
-reg  [1:0] fslot = 0;
+reg  [2:0] fslot = 0;
 reg  [6:0] ffile = 0;
 reg [23:0] flba = 0;
 reg        f_err = 0, f_lost = 0;   // how the last read ended: err != 0, or the disc went meanwhile
@@ -103,46 +104,42 @@ reg [31:0] off_a = 0, off_b = 0;
 reg  [6:0] cur_file = 0;
 reg [23:0] cur_lba = 0;
 reg        cur_audio = 0;
-reg  [1:0] cur_slot = 0;
+reg  [2:0] cur_slot = 0;
 reg  [6:0] pf_file = 0;
 reg [23:0] pf_base = 0;
-reg  [1:0] pf_left = 0, pf_n = 0;
+reg  [2:0] pf_left = 0, pf_n = 0;
 
-// Lookups, registered: hit for (look_file, look_lba), useful for the window (look_file, look_base .. + 3)
+// Lookups, registered: hit for (look_file, look_lba), useful for the window (look_file, look_base .. + 5)
 reg  [6:0] look_file = 0;
 reg [23:0] look_lba = 0, look_base = 0;
-reg  [3:0] hit = 0, useful = 0;
+reg  [SLOTS-1:0] hit = 0, useful = 0;
 
 // ---- Stream ----
 reg [10:0] j = 0;
 reg  [7:0] t = 0;
 reg [31:0] q_hold = 0;
 
-function automatic [11:0] slot_base(input [1:0] s);     // s * 588
-    case (s)
-        2'd0: return 12'd0;
-        2'd1: return 12'd588;
-        2'd2: return 12'd1176;
-        default: return 12'd1764;
-    endcase
+function automatic [11:0] slot_base(input [2:0] s);     // s * 588
+    return 12'(s) * 12'd588;
 endfunction
 
-function automatic [1:0] first(input [3:0] v);
-    return v[0] ? 2'd0 : v[1] ? 2'd1 : v[2] ? 2'd2 : 2'd3;
+function automatic [2:0] first(input [SLOTS-1:0] v);
+    for (int n = 0; n < SLOTS; n++) if (v[n]) return 3'(n);
+    return 3'd0;
 endfunction
 
 wire disc_ok = disc_present;
 
 wire req_pending = req_valid != req_done;
-wire [3:0] spare = ~useful;          // slots outside the window
+wire [SLOTS-1:0] spare = ~useful;    // slots outside the window
 
 always @(posedge CLK_48M) begin
     cd_dl_wr <= 0;
 
     // Lookups, every clock, on whatever look_* holds
-    for (int n = 0; n < 4; n++) begin
+    for (int n = 0; n < SLOTS; n++) begin
         hit[n]    <= valid[n] && tag_file[n] == look_file && tag_lba[n] == look_lba;
-        useful[n] <= valid[n] && tag_file[n] == look_file && tag_lba[n] - look_base < 24'd4;
+        useful[n] <= valid[n] && tag_file[n] == look_file && tag_lba[n] - look_base < 24'(SLOTS);
     end
 
     // A host read ends
@@ -280,7 +277,7 @@ always @(posedge CLK_48M) begin
                 pf_file        <= cur_file;
                 pf_base        <= cur_lba;
                 pf_n           <= 1;
-                pf_left        <= 3;
+                pf_left        <= 3'(SLOTS - 1);
                 state          <= S_DONE;
             end
         end

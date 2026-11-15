@@ -10,6 +10,8 @@
 Assets/ngcd/common/t/pattern.bin and other.bin: 8 sectors whose byte i is pattern(i), and that xor 0xA5,
 so that a read of either file lands somewhere a test can tell apart. tb_cd_host.sv has the same formula.
 Assets/ngcd/common/disc/: tools/make_test_disc.py --data-sectors 520, for tb_cd_fetch.sv.
+Assets/ngcd/common/ring/: the same with --data-sectors 3600, for tb_cd_ring.sv's 3,000 sequential sectors and a fill
+of 15 chunks past them.
 """
 import pathlib
 import subprocess
@@ -33,3 +35,5 @@ data = bytes(pattern(i) for i in range(8 * SECTOR))
 
 subprocess.run([sys.executable, str(ROOT / "tools/make_test_disc.py"), str(run / "Assets/ngcd/common/disc"),
                 "--data-sectors", "520"], check=True)
+subprocess.run([sys.executable, str(ROOT / "tools/make_test_disc.py"), str(run / "Assets/ngcd/common/ring"),
+                "--data-sectors", "3600"], check=True)

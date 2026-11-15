@@ -27,7 +27,7 @@
 // slider of -2 makes it 32 and 40. His palette path has 4 pixel registers where MiSTer's has 2,
 // so, by counting registers (not simulated), the Overdrive's 320 mode starts at DE index 2 of this
 // module and his 304 mode covers DE indices 10..313: this picture sits about 2 pixels to the right
-// of the Overdrive's at its default. There are no X/Y sliders yet.
+// of the Overdrive's at its default.
 // Cropping to 304 removes 8 pixels on each side, which are the pixels neogeo.sv blanks when
 // status[16] is set (pxcnt outside 7..310; by my reading of neogeo.sv:2017-2031 and
 // video_cleaner.sv the cleaned hblank falls one pixel before pxcnt 0, so these are pixels 8..311
@@ -41,6 +41,10 @@
 // from 0x110. So NTSC shows the whole window and PAL skips its first 16 lines and drops the last 16,
 // a symmetric crop. Measured with videosync.v: 27 lines from the PAL trailing edge to the window,
 // 16 in NTSC. Not confirmed on hardware.
+//
+// Screen position, x_off and y_off, signed, right and down positive: the window DE opens on moves against the picture, up to the
+// 32 pixels and 16 lines of the menu. What it then takes from the blanking is black. hc and yc count through the blanking, from where
+// the blanking last fell, so a window that opens before that edge wraps around the end of the previous line or frame.
 //
 // Clock crossing: CLK_48M with ce_pix and CLK_PIX come from one VCO, with an exact ratio of 8 and
 // a fixed but unknown phase; STA closes the paths between them, so what has to hold is the pointer
@@ -67,6 +71,7 @@ module video_out (
     input  wire        width320,        // APF_Video_ratio[2], 1 = 320 wide; status[16] = ~width320
     input  wire [2:0]  slot,            // APF_Video_ratio[2:0], the scaler mode
     input  wire        pal,             // status[3]
+    input  wire [7:0]  x_off, y_off,    // signed, the menu's Screen X and Y
     input  wire        CLK_PIX,
     input  wire        CLK_PIX_90,
 
@@ -89,29 +94,43 @@ assign video_skip         = 1'b0;
 reg [1:0] rst_w = 2'b11;
 always @(posedge CLK_48M) rst_w <= {rst_w[0], rst};
 
-reg [4:0] cfg_s1 = 0, cfg_s2 = 0;      // {pal, slot, width320}
-always @(posedge CLK_48M) {cfg_s2, cfg_s1} <= {cfg_s1, pal, slot, width320};
+reg [20:0] cfg_s1 = 0, cfg_s2 = 0;     // {y_off, x_off, pal, slot, width320}
+always @(posedge CLK_48M) {cfg_s2, cfg_s1} <= {cfg_s1, y_off, x_off, pal, slot, width320};
 
 // ---- DE, slot word and sync pulses, CLK_48M at ce_pix ----
 
 localparam [8:0] SKIP_PAL = 9'd16;
 localparam [8:0] LINES    = 9'd224;
+localparam [8:0] H_TOTAL  = 9'd384;
 
-reg        old_hbl = 1, old_hs = 0, old_vs = 0, was_de = 0;
-reg [8:0]  hc = 0;                      // pixels since hblank fell, index of the current pixel
-reg [8:0]  yc = 0;                      // active lines completed in this frame
+reg        old_hbl = 1, old_vbl = 1, old_hs = 0, old_vs = 0, was_de = 0;
+reg [8:0]  hc = 0;                      // pixels since hblank fell
+reg [8:0]  yc = 9'd511;                 // lines since vblank fell, none until the first one
 reg        w320_l = 1, pal_l = 0;
 reg  [2:0] slot_l = 0;
+reg  [7:0] x_l = 0, y_l = 0;
 reg  [2:0] hs_sr = 0;
 
-wire       de_h = !hblank && (w320_l || (hc >= 9'd8 && hc < 9'd312));
-wire [8:0] y0   = pal_l ? SKIP_PAL : 9'd0;
-wire       de_v = !vblank && yc >= y0 && yc < y0 + LINES;
+wire [8:0] hc_now  = old_hbl && !hblank ? 9'd0 : hc;
+wire [8:0] yc_now  = old_vbl && !vblank ? 9'd0 : yc;
+wire [8:0] v_total = pal_l ? 9'd312 : 9'd264;
+
+// The first pixel and line of the window, wrapped into the line and the frame
+wire signed [9:0] x0 = (w320_l ? 10'sd0 : 10'sd8) - 10'($signed(x_l));
+wire signed [9:0] y0 = (pal_l ? 10'(SKIP_PAL) : 10'sd0) - 10'($signed(y_l));
+wire [8:0] xs = x0 < 0 ? 9'(x0 + 10'(H_TOTAL)) : 9'(x0);
+wire [8:0] ys = y0 < 0 ? 9'(y0 + 10'(v_total)) : 9'(y0);
+wire [8:0] dx = hc_now >= xs ? hc_now - xs : hc_now + H_TOTAL - xs;
+wire [8:0] dy = yc_now >= ys ? yc_now - ys : yc_now + v_total - ys;
+
+wire       de_h = dx < (w320_l ? 9'd320 : 9'd304);
+wire       de_v = dy < LINES;
 wire       de_n = de_h && de_v;
 wire       fall = was_de && !de_n;
+wire       blank = hblank || vblank;
 
 wire [26:0] word = {de_n, hs_sr[2], vs && !old_vs,
-                    de_n ? {r, g, b} : (fall ? {8'd0, slot_l, 13'd0} : 24'd0)};
+                    de_n ? (blank ? 24'd0 : {r, g, b}) : (fall ? {8'd0, slot_l, 13'd0} : 24'd0)};
 
 (* ramstyle = "logic" *) reg [26:0] mem [0:3];   // registers, not M10K: 4 words, read asynchronously
 reg  [1:0] wptr = 0, wg = 0;
@@ -122,13 +141,14 @@ always @(posedge CLK_48M) begin
         wg   <= 0;
     end else if (ce_pix) begin
         old_hbl <= hblank;
+        old_vbl <= vblank;
         old_hs  <= hs;
         old_vs  <= vs;
         was_de  <= de_n;
         hs_sr   <= {hs_sr[1:0], hs && !old_hs};
-        hc      <= hblank ? 9'd0 : (hc == 9'd511 ? hc : hc + 1'b1);
-        if (hblank && !old_hbl) yc <= vblank ? 9'd0 : (yc == 9'd511 ? yc : yc + 1'b1);
-        if (hblank) {pal_l, slot_l, w320_l} <= cfg_s2;
+        hc      <= hc_now + 1'b1;
+        yc      <= hblank && !old_hbl && yc_now != 9'd511 ? yc_now + 1'b1 : yc_now;
+        if (hblank) {y_l, x_l, pal_l, slot_l, w320_l} <= cfg_s2;
         mem[wptr] <= word;
         wptr      <= wptr + 1'b1;
         wg        <= (wptr + 1'b1) ^ ((wptr + 1'b1) >> 1);

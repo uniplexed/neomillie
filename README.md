@@ -2,221 +2,209 @@
 
 # NeoMillie
 
-Neo Geo (AES/MVS) and Neo Geo CD cores for the Analogue Pocket, built from the current MiSTer Neo Geo RTL plus a new
-Pocket hardware layer.
+Neo Geo and Neo Geo CD cores for the Analogue Pocket, built from the current MiSTer Neo Geo RTL with a new hardware layer
+for the Pocket.
 
-| Core | What it runs | State |
-|---|---|---|
-| `uniplexed.NeoMillie` | MVS and AES cartridge games | Works on the games tried |
-| `uniplexed.NeoMillieCD` | Neo Geo CD discs, with two automatic modes: CD at 1x and CDZ at 2x | Works on the discs below |
+| Core | What it runs |
+|---|---|
+| `uniplexed.NeoMillie` | Cartridge games, as a home console (AES) or an arcade board (MVS) |
+| `uniplexed.NeoMillieCD` | Neo Geo CD discs, as the first console at single speed or as a CDZ at double speed |
 
-**New in NeoMillie 0.5.1: a new memory layout for the cartridge core.** The 68000 loses 0.000% of its
-clocks waiting for the ROM memory on Metal Slug X. Saves are written on Reset Core as well as on Quit. Millie's icon is no longer
-inverted on the Pocket's menu.
+The user manual explains every setting: [English](docs/manual.md), [Español](docs/manual.es.md), [Français](docs/manual.fr.md), [Deutsch](docs/manual.de.md), [Italiano](docs/manual.it.md), [日本語](docs/manual.ja.md).
 
-**New in NeoMillieCD 0.5.3: closer to the real console.** A new sector is no longer held back for up to 50 ms while the decoder's
-interrupt is masked, which real hardware does not do. The 68000's work RAM starts as 0xAA, as on MiSTer. The memory card is
-written on Reset Core as well as on Quit, and the Platform banner is new.
+No BIOS, ROMs or discs are included, and none will be. You need your own. The cores are tested on one Pocket, so reports
+are welcome in the issues: say which core, version, BIOS, game and settings.
 
-**New in NeoMillieCD 0.5.2: memory card saves reach the SD card.** On 0.5.0 and 0.5.1 a game saved to the card and could
-load it until you left the core, but the file was not written on Quit, so the save was lost. Please update. Saves made on
-those versions cannot be recovered.
+## What is new in 0.6.0
 
-**Since NeoMillieCD 0.5.1: two automatic modes.** Choose CD at 1x or CDZ at 2x with the CD/CDZ setting and the core sets up
-the UniBIOS by itself, with nothing to change in its menu. Samurai Shodown RPG now loads on its first Start Game in both
-modes, The King of Fighters '97 plays in both, and The King of Fighters '95 plays in CDZ mode with its CD audio.
+From this version the two cores share one version number and one release.
 
-Tested on one Pocket. Reports are welcome in the issues: say which core, version, BIOS, game and setting.
+### In both cores
 
-No BIOS, ROMs or discs are included, and none will be. You need your own.
+| New | What it does |
+|---|---|
+| 68K Clock | Runs the console's main processor at 12 MHz as the original, or at 16 or 24 MHz. Scenes that slow down on a real console slow down less |
+| L/R Buttons | L and R press A+B and C+D, and either one can press A+B+C instead |
+| Screen X Position, Screen Y Position | Move the picture up to 32 pixels sideways and 16 lines up or down |
+| Stereo Mix | Blends the left and right channels by 25%, 50% or all the way to mono |
+| Mute | Silences any of the sound chip's sources: FM, the two kinds of samples and the square wave channels |
+| ADPCM-A Channel | Mutes one of the six sample channels, or plays one alone |
+| Sound chip | jotego's current YM2610: corrected CSM timing, timer flags and SSG-EG release |
+| Menu | The items come in the same order on both cores: system, video, audio, controls |
+| Manual | A user manual in English, Spanish, French, German, Italian and Japanese, with a picture of each menu |
 
-## Supporting the project
+### In the cartridge core
 
-NeoMillie is free and will stay free. If it is useful to you, a donation helps pay for the test hardware and the time
-that goes into each release.
+| New | What it does |
+|---|---|
+| MVS DIP | The arcade board's switches: the settings menu, free play and freeze |
+| Region | Japan, USA or Europe, through the UniBIOS |
+| Memory Card Unplugged | Makes the console see no memory card |
+| Games with the SMA chip | A timing fix in the chip's bank switch, which The King of Fighters '99, Garou, Metal Slug 3 and The King of Fighters 2000 use. Metal Slug 3 was played on a Pocket with it |
+| Load Game | The entry that picks a game has that name in the Pocket's menu. It read Load Game JSON Setup |
 
-[![Donate with PayPal](https://www.paypalobjects.com/en_GB/i/btn/btn_donate_LG.gif)](https://www.paypal.com/donate/?hosted_button_id=A72RAVHX98628)
+### In the CD core
+
+| New | What it does |
+|---|---|
+| CD Turbo 4x (beta) | Reads the disc's data at four times single speed, with CD/CDZ on or off. The disc's music still plays at normal speed |
+| Read ahead | The core keeps five sectors read ahead of the drive, in a six-sector buffer, so a slow read of the SD card is felt less often |
+| PAL Output | The 50 Hz picture, which only the cartridge core had |
+| Sample uploads | A game that copies sounds to the sample memory with the screen off, as Fatal Fury 3 does after "Fight", now takes the time the console's own processor would: 47 frames at 12 MHz, measured on a Pocket, where 0.5.3 took 51 |
+
+Seven loads of The King of Fighters '99 added up, timed by the core on one Pocket:
+
+| CD/CDZ | CD Turbo 4x | 68K Clock | Seven loads |
+|---|---|---|---|
+| Off | Off | 12 MHz | 66.3 s |
+| On | Off | 12 MHz | 38.4 s |
+| On | On | 12 MHz | 27.8 s |
+| On | On | 24 MHz | 23.6 s |
+
+### Disc converter
+
+The NeoMillieCD Converter turns a disc kept in another form into the one CUE and one BIN the core reads. It now has a
+window, for Windows x64, macOS on Apple Silicon and Linux x64, beside the Python script. It reads a CUE with BIN, ISO, WAV,
+big-endian or compressed audio, and CloneCD, Alcohol 120%, Nero, DiscJuggler and CHD images, one disc or a whole folder at
+a time. A failed or cancelled disc leaves nothing behind, and a disc already converted is skipped unless you ask to
+overwrite it.
+
+![The NeoMillieCD Converter converting a folder of discs](docs/img/converter-step4-converting.png)
+
+### Earlier versions
+
+- NeoMillieCD 0.5.3 stopped holding a sector back while the decoder's interrupt was masked, which a real console does not
+  do. The 68000's work RAM starts as 0xAA, as on MiSTer, and the memory card is written on Reset Core as well as on Quit.
+- NeoMillieCD 0.5.2 fixed memory card saves, which 0.5.0 and 0.5.1 did not write to the SD card. Saves made on those two
+  versions cannot be recovered.
+- NeoMillieCD 0.5.1 brought the two automatic modes: CD/CDZ picks the console and its speed, and the UniBIOS follows.
+- NeoMillie 0.5.1 gave the cartridge core a new memory layout. On Metal Slug X the 68000 loses 0.000% of its clocks waiting
+  for memory. Saves are written on Reset Core as well as on Quit.
 
 ## Installing
 
-Download the zips from [Releases](https://github.com/uniplexed/neomillie/releases) and unzip each to the root of the
-SD card, merging folders. The packages also add the `ng` and `ngcd` platform entries, with their images.
+Download the zips from [Releases](https://github.com/uniplexed/neomillie/releases) and unzip each to the root of the SD
+card, merging folders. Then add your own files.
 
-### Neo Geo CD
+Cartridges, in `Assets/ng/common/`: `uni-bios_4_0.rom`, `000-lo.lo`, `sfix.sfix`, and one folder per game in the Darksoft
+layout. ROMs and BIOS you already use with the Neo Geo Overdrive core work as they are. On the Pocket open openFPGA, then
+Neo Geo, and pick a game.
 
-1. In `Assets/ngcd/common/` put `000-lo.lo` and `uni-bioscd.rom`, the UniBIOS CD, exactly 524,288 bytes. The core
-   loads that file by name.
-2. Put each disc in its own folder there, with its BIN beside its CUE, for example
-   `Assets/ngcd/common/Metal Slug/Metal Slug.cue` and `Metal Slug.bin`.
-3. On the Pocket: **openFPGA**, **Neo Geo CD**, **NeoMillieCD**: the BIOS loads. In the Pocket's menu, pick the `.cue`
-   on the **Disc** slot.
+Discs, in `Assets/ngcd/common/`: `uni-bioscd.rom` (the UniBIOS CD, 524,288 bytes), `000-lo.lo`, and one folder per disc
+with its `.cue` and `.bin`. On the Pocket open openFPGA, then Neo Geo CD, then NeoMillieCD, and pick the `.cue` on the Disc
+entry of Core Settings.
 
-### Neo Geo cartridges
+The [manual](docs/manual.md#what-you-need) lists each file. Discs kept in other formats go through the NeoMillieCD
+Converter, attached to each release, as the [manual](docs/manual.md#disc-images) explains.
 
-1. In `Assets/ng/common/` put `uni-bios_4_0.rom`, `000-lo.lo` and `sfix.sfix`, and one folder per game in the Darksoft
-   layout (`srom`, `prom`, `crom0`, `m1rom`, `vroma0`, and `prom1` if the game has one). The folder name is the
-   `data_path` of the game's JSON file. ROMs and BIOS you already use with the Neo Geo Overdrive core work as they are.
-2. On the Pocket: **openFPGA**, **Neo Geo**, then pick a game from the list.
+## What has been tested
 
-## The CD core
+All on one Pocket. "Build" is the version a row was run on.
 
-The memory layout of this core is in [Memory layout](#memory-layout).
+### Discs
 
-### Speed and the CD/CDZ setting
-
-| CD/CDZ | Reads the disc at | Time per sector |
-|---|---|---|
-| Off, the default | 1x, 150 KB/s | 13.33 ms |
-| On | 2x, 300 KB/s | 6.67 ms |
-
-Changing the setting restarts the core and returns to the BIOS, so unsaved progress is lost. The disc stays mounted.
-The Pocket remembers the setting.
-
-The setting also decides which console the UniBIOS runs as: a top loader with CD/CDZ off and a CDZ with it on. There is nothing
-to set. The SYSTEM item in the UniBIOS's own menu has no effect in this core, whatever it shows or has saved.
-
-### Tested discs
-
-All with `uni-bioscd.rom`, on a Pocket. "Build" is the version the row was run on.
+All with `uni-bioscd.rom`.
 
 | Disc | Setting | Result | Build |
 |---|---|---|---|
-| The King of Fighters '95 | CD/CDZ on, 2x | Plays with music | 0.4.1 |
-| The King of Fighters '97 | CD/CDZ on, 2x | A fight reached, music fine | 0.5.1 |
-| The King of Fighters '97 | CD/CDZ off, 1x | A fight reached | 0.5.1 |
-| The King of Fighters '99 | CD/CDZ on, 2x | A fight finished, no cuts in the music heard | 0.4.0 |
-| Metal Slug | CD/CDZ off, 1x | Works | 0.4.0 |
-| Samurai Shodown RPG | CD/CDZ on, 2x | Loads on the first Start Game, up to the fight after choosing a character | 0.5.1 |
-| Samurai Shodown RPG | CD/CDZ off, 1x | Loads on the first Start Game, up to the fight after choosing a character | 0.5.1 |
-| Last Blade 2 | CD/CDZ off, 1x | Works | 0.5.0 |
-| The King of Fighters '98 | CD/CDZ on, 2x | Plays, sounds fine | 0.5.1 |
-| Art of Fighting | CD/CDZ on, 2x | Plays, sounds fine | 0.5.1 |
-| Samurai Shodown IV | CD/CDZ on, 2x | Plays, sounds fine | 0.5.1 |
-| Twinkle Star Sprites | CD/CDZ on, 2x | Plays, sounds fine | 0.5.1 |
-| Metal Slug 2 | CD/CDZ on, 2x | Plays, sounds fine. Slower under heavy load than on the cartridge core | 0.5.1 |
-| Aero Fighters 3 | CD/CDZ on, 2x | Plays, sounds fine | 0.5.1 |
-| Pulstar | CD/CDZ on, 2x | Works | 0.5.1 |
-| Fatal Fury 3 | CD/CDZ on, 2x | Works almost perfectly, with a few black frames | 0.5.1 |
+| The King of Fighters '95 | CD/CDZ on | Plays with music | 0.4.1 |
+| The King of Fighters '97 | CD/CDZ on | A fight reached, music fine | 0.5.1 |
+| The King of Fighters '97 | CD/CDZ off | A fight reached | 0.5.1 |
+| The King of Fighters '98 | CD/CDZ on | Plays, sounds fine | 0.5.1 |
+| The King of Fighters '99 | CD/CDZ on and off, CD Turbo 4x on and off, 12, 16 and 24 MHz | Plays in every combination tried | 0.6.0 debug build |
+| Metal Slug | CD/CDZ off | Works | 0.4.0 |
+| Metal Slug 2 | CD/CDZ on | Plays, sounds fine. Slower under heavy load than on the cartridge core | 0.5.1 |
+| Samurai Shodown RPG | CD/CDZ on and off | Loads on the first Start Game, up to the fight after choosing a character | 0.5.1 |
+| Samurai Shodown IV | CD/CDZ on | Plays, sounds fine | 0.5.1 |
+| Last Blade 2 | CD/CDZ off | Works | 0.5.0 |
+| Art of Fighting | CD/CDZ on | Plays, sounds fine | 0.5.1 |
+| Twinkle Star Sprites | CD/CDZ on | Plays, sounds fine | 0.5.1 |
+| Aero Fighters 3 | CD/CDZ on | Plays, sounds fine | 0.5.1 |
+| Pulstar | CD/CDZ on | Works | 0.5.1 |
+| Fatal Fury 3 | CD/CDZ on, CD Turbo 4x on, 12 and 24 MHz | Works. Its black screens after "Fight" are the game's own, as the [manual](docs/manual.md#things-a-game-does-that-look-like-faults) explains | 0.6.0 debug build |
 
-Metal Slug and Metal Slug 2 feel slower on CD than on the cartridge core, and the music and sound differ slightly. The results of the
-hardware tests are in [`docs/hw-tests.md`](docs/hw-tests.md).
+Metal Slug and Metal Slug 2 feel slower on CD than on the cartridge core, and their music and sound differ slightly.
 
-### BIOS
+### Cartridge games
+
+Metal Slug (all of level 1), Metal Slug 3 (memory card save and read-back after a power cycle, in MVS and AES modes), Metal
+Slug X (first mission), The King of Fighters '98, The King of Fighters 2003, Garou, SVC Chaos, Samurai Shodown V (one
+fight), Samurai Shodown V Special (two fights), The Super Spy and Art of Fighting (jukebox with stereo). Also changing
+AES/MVS both ways with a game running, PAL on and off, the second player's coin and Reset Core.
+
+On a debug build of 0.6.0, with the 68K Clock at 24 MHz: Metal Slug 2, Metal Slug 3, Metal Slug X, The King of Fighters
+'94, Fatal Fury 3 and Samurai Shodown V Special, with no fault in the picture reported.
+
+Every run is in [docs/hw-tests.md](docs/hw-tests.md), the project's log of hardware tests.
+
+### BIOS for the CD core
 
 | File | State |
 |---|---|
-| `uni-bioscd.rom` | The supported one. All the tests above |
-| `top-sp1.bin` | Can be picked in the menu. Works at 1x with CD/CDZ off. With CD/CDZ on it sees the tray as open |
+| `uni-bioscd.rom` | The supported one. Every test above |
+| `top-sp1.bin` | Can be picked in the menu. Works with CD/CDZ off. With CD/CDZ on it sees the tray as open |
 | `front-sp1.bin` | Can be picked in the menu. Loads Metal Slug |
-| `neocd.bin` | Boots, then stops at its disc protection check on protected discs, as the drive does not answer the TOC sub-command that check needs |
+| `neocd.bin` | Boots, then stops at its disc protection check on protected discs: the drive does not answer the command that check needs |
 
-### Known issues
+## Known issues and limits
 
-- **Brief music cuts** were heard on a debug build, which also writes a counter file to the SD card every 7 seconds.
-- **Slow SD reads:** a read can take around 450 ms. This slows loading, and in simulation it leaves a silent gap in CD
-  audio. The emulated system does not pause for it.
+- CD Turbo 4x is in beta and tested on a few discs. It is no real drive, so unlike the two real speeds it waits for the
+  program: a sector is held back while the decoder's interrupt is masked (50 ms at most) and, after the unmask, until
+  the BIOS has read its count of sectors left. A program that keeps the interrupt open from one sector to the next gets
+  them at 2x: Samurai Shodown RPG builds its file list that way, and at 4x it lost names and loaded from the wrong place.
+- A read of the SD card can take around 450 ms. It slows a load, and in simulation it leaves a silent gap in the disc's
+  music. The console does not pause for it.
+- Brief cuts in the music were heard on a debug build, which also writes a file of counters to the SD card every 7
+  seconds. They have not been reported on a release build.
+- The CD core reports no disc for a CUE of more than 9,408 bytes, a CUE with a second `FILE`, a `WAVE` file or a
+  `MODE1/2048` track, an ISO of 2,048-byte sectors, and a BIN that is not beside its CUE. The disc converter attached to
+  each release converts those.
+- A `PREGAP` before an audio track that follows another audio track plays the next track's first seconds early, as MiSTer
+  does with one BIN.
+- Not in the CD core: CHD files read directly, subcode, save states, cheats, and any backup memory beyond the 8 KB card.
+- Not in the cartridge core: a choice of BIOS from the menu, multitap, spinner and mouse. Its real-time clock was not
+  checked.
+- Saves from the Neo Geo Overdrive core do not load here, and there is no converter.
+- The cartridge core's game list comes from MiSTer's `romsets.xml`. Only the games named above were run on a Pocket.
 
-### Disc images
-
-The core reads MODE1/2352 `.cue`/`.bin` only: one `.cue` naming one BIN, with `MODE1/2352` and `AUDIO` tracks, or a raw
-`.bin` of one data track. Sets of ISO and WAV files, one file per track, and CHD files need converting first with
-`cd_convert.py`, which is attached to each [release](https://github.com/uniplexed/neomillie/releases) and is in `tools/`.
-It is one script that needs only Python 3.8 or newer:
-
-    python cd_convert.py DISC.cue OUTDIR [--name NAME]
-    python cd_convert.py DISC.chd OUTDIR [--name NAME]
-
-It takes a CUE of MODE1/2048 or MODE1/2352 data tracks and AUDIO tracks, in BINARY or WAVE files, or a CHD. It only reads
-them, and writes `NAME.bin` and `NAME.cue` to `OUTDIR/NAME/`. Copy that folder to `Assets/ngcd/common/`. It refuses an
-output that would overwrite its source.
-
-A CHD also needs `chdman`, which comes with [MAME](https://www.mamedev.org/), on the PATH or beside the script. The CHD
-path uses chdman 0.289: Metal Slug and The King of Fighters '95, turned into CHDs and back, gave the same BIN
-byte for byte. Metal Slug's CUE was also the same. A CHD does not keep the indexes above 01 of a data track, so KOF '95's
-CUE loses them.
-
-### Slots and menu
-
-| Slot | Required | What it takes |
-|---|---|---|
-| BIOS | yes | `uni-bioscd.rom`, loaded by name; another `.rom`, `.bin` or `.sp1` of exactly 524,288 bytes can be picked |
-| LO | yes | `000-lo.lo` |
-| Disc | no | Picked by you: a `.cue`, or a raw `.bin` |
-| Disc data | no | Not yours to pick: the core opens the CUE's BIN here |
-| Memory Card | no | Up to 8 KB, `Saves/ngcd/common/uni-bioscd.sav`, written on Quit and on Reset Core. One card, whichever BIOS is picked |
-
-Menu: Reset Core, CD/CDZ, Region (US, EU, JP, AS), 304 or 320 wide, and four aspect ratios for the scaler.
-
-### Limits
-
-- A CUE of more than 9,408 bytes is reported as no disc. So is a CUE with a second `FILE`, a `WAVE` file or a MODE1/2048
-  track, an ISO of 2,048-byte sectors, and a BIN that is not there.
-- BINs go under `Assets/ngcd/`. The core opens the name in the CUE from the CUE's own folder.
-- A `PREGAP` before an audio track that follows an audio track plays the next track's first seconds before that track
-  starts, as MiSTer does with one BIN. `cd_convert.py` keeps a `PREGAP` as it finds it.
-- No CHD, no subcode, no save states, no cheats, and no backup RAM cartridge beyond the 8 KB card.
-
-## The cartridge core
-
-The memory layout of this core is in [Memory layout](#memory-layout).
-
-Slots: `Game JSON Setup` is the pick from the list, and the game's JSON file fills SROM, PROG, PROG1, CROM, MROM and
-VROM. BIOS, LO and SFIX are the fixed files above. Saves: `Memory Card` and `Backup Ram` (`backup.bak`).
-
-Menu: Reset Core, AES/MVS (on is MVS), PAL output, 304 or 320 wide, and four aspect ratios for the scaler.
-
-Tested on one Pocket and working: Metal Slug (all of level 1), Metal Slug 3 (memory card save and read-back after a power
-cycle, in MVS and AES modes), Metal Slug X (first mission), KOF '98, KOF 2003, Garou, SVC Chaos, Samurai Shodown V (one
-fight), Samurai Shodown V Special (two fights), The Super Spy, Art of Fighting 1 (jukebox with stereo), changing AES/MVS
-both ways with a game running, PAL on and off, the P2 coin and Reset Core. On Metal Slug X, first mission, one play, the 68000
-loses 0.000% of its clocks waiting for the ROM memory.
-
-Limits:
-
-- The real-time clock (date, time, weekday) was not checked.
-- Not in this core: screen X/Y position, DIP switch settings, channel mutes, BIOS choice, multitap, spinner and
-  mouse, combo buttons, CPU overclock.
-- The game list is generated from MiSTer's `romsets.xml`, with the V2 masks of the Overdrive's JSON set. The games named
-  above are the ones run on a Pocket.
-- Saves from the Overdrive core do not load in this one. Its `backup.bak` has the bytes of each 32-bit word reversed,
-  its `.sav` has the two halves of each word swapped, and the folder under `Saves/ng/` differs. There is no converter.
-
-## Memory layout
+## How it is built
 
 ![Which chip holds each ROM and RAM in the two cores](docs/memory-layout.svg)
 
-[docs/memory.md](docs/memory.md) has the addresses, the arbitration of each chip, the timing budgets including `RD_WAIT`, the saves and how to
-measure and change them.
+[docs/memory.md](docs/memory.md) has the addresses, how each chip is shared, the timing budgets and the saves.
+[docs/architecture.md](docs/architecture.md) shows the parts of each core and how they work together.
 
 ![Neo Geo components and the Pocket memories they use in AES, MVS and CD modes](docs/memory-components.svg)
 
-The same layout seen from the other side: for each Neo Geo component, the memory that holds it in each mode.
-
 ## Artwork
 
-The Platform banner of NeoMillieCD, with Millie, the logo. NeoMillie ships no banner: the `ng` Platform is shared by every Neo Geo
-core, and its image is the library's.
+NeoMillieCD's banner on the Pocket, with Millie, the logo. NeoMillie ships no banner: every Neo Geo core shares the `ng`
+platform, and its image is the openFPGA library's.
 
 <p><img src="docs/banners/neomilliecd-banner.png" alt="NeoMillieCD banner: Millie with a CD" width="420"></p>
+
+## Supporting the project
+
+NeoMillie is free and will stay free. If it is useful to you, a donation helps pay for the test hardware and the time each
+release takes.
+
+[![Donate with PayPal](https://www.paypalobjects.com/en_GB/i/btn/btn_donate_LG.gif)](https://www.paypal.com/donate/?hosted_button_id=A72RAVHX98628)
 
 ## Building from source
 
     git clone --recurse-submodules https://github.com/uniplexed/neomillie
 
-Simulation (Verilator from OSS CAD Suite, installed under the git-ignored `tools/oss-cad-suite/`):
+Simulation, with Verilator from OSS CAD Suite installed under the git-ignored `tools/oss-cad-suite/`:
 
-    python tools/sim.py <bench>        # runs sim/<bench>/tb_*.sv, prints PASS/FAIL
+    python tools/sim.py <bench>        # runs sim/<bench>/tb_*.sv, prints PASS or FAIL
 
-Quartus build (Quartus Prime Lite 25.1) with the ALM and M10K budget check, then the SD card package:
+Quartus build, with Quartus Prime Lite 25.1 and a check of the logic and memory budget, then the SD card package:
 
     python tools/build.py neogeo       # or neogeocd
     python tools/package.py neogeo <version>
 
-`neogeocd_debug` builds the CD core's debug version: it keeps CD Speed and Lid open in the menu, and writes counters to
-`wait.sav`, which `tools/check_wait_save.py` reads.
-
-Fit on the 5CEBA4F23C8, of 18,480 ALMs and 308 M10K: NeoMillie 0.5.1 takes 8,994 ALMs and 280 M10K and NeoMillieCD 0.5.3
-11,527 ALMs and 281 M10K, with no negative slack in either.
+`neogeo_debug` and `neogeocd_debug` build the debug versions, which write counters to `waitt.sav` for
+`tools/check_wait_save.py` to read.
 
 ## License
 

@@ -36,6 +36,8 @@ rtl/cd/cdd_drive.sv
 rtl/cd/cd_host.sv
 rtl/cd/cd_mount.sv
 rtl/cd/cd_fetch.sv
+rtl/cd/cd_ring.sv
+rtl/cd/cd_ring_wr.sv
 rtl/pocket/bios_model.sv
 rtl/pocket/sram_port.sv
 rtl/cd/cd.sv
@@ -45,11 +47,11 @@ upstream/NeoGeo_MiSTer/rtl/cd/cdda.v
 rtl/pocket/pll_mvs_cfg.sv
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt10.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_rst.v
-upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_mmr.v
-upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_top.v
+rtl/jt12/jt12_mmr.v
+rtl/jt12/jt12_top.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_acc.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_single_acc.v
-upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_eg.v
+rtl/jt12/jt12_eg.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_eg_cnt.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_eg_comb.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_eg_step.v
@@ -57,7 +59,7 @@ upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_eg_pure.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_eg_final.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_eg_ctrl.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_exprom.v
-upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_kon.v
+rtl/jt12/jt12_kon.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_lfo.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_div.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_mod.v
@@ -70,13 +72,13 @@ upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_pg_sum.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_pg_comb.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_pm.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_logsin.v
-upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_reg.v
+rtl/jt12/jt12_reg.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_reg_ch.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_sh.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_sh_rst.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_sh24.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_sumch.v
-upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_timers.v
+rtl/jt12/jt12_timers.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/jt12_pcm.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/mixer/jt12_genmix.v
 upstream/NeoGeo_MiSTer/rtl/jt12/hdl/mixer/jt12_decim.v
@@ -139,7 +141,7 @@ upstream/NeoGeo_MiSTer/rtl/io/neo_g0.v
 upstream/NeoGeo_MiSTer/rtl/io/upd4990.v
 upstream/NeoGeo_MiSTer/rtl/io/com.v
 upstream/NeoGeo_MiSTer/rtl/io/neo_pvc.v
-upstream/NeoGeo_MiSTer/rtl/io/neo_sma.sv
+rtl/pocket/neo_sma_pocket.sv
 upstream/NeoGeo_MiSTer/rtl/io/register.v
 upstream/NeoGeo_MiSTer/rtl/cells/lt4.v
 upstream/NeoGeo_MiSTer/rtl/cells/fds16bit.v

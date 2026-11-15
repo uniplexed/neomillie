@@ -33,7 +33,7 @@ import sys
 
 sys.dont_write_bytecode = True     # no __pycache__ in tools/
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from cd_convert import SECTOR, USER, mode1_sector, msf_text  # noqa: E402
+from cdconv.disc import SECTOR, USER, mode1_sector, msf_text  # noqa: E402
 
 AUDIO_SECTORS = 10
 GAP = 2

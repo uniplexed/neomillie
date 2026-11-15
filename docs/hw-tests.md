@@ -1,7 +1,7 @@
 # Hardware tests
 
-Results from one Analogue Pocket, run in 2026-11 and reported by the owner, with the date where it is known. Firmware: not
-recorded. The debug cores add a 68K wait counter, read on a PC with `tools/check_wait_save.py`.
+Results from one Analogue Pocket, run in 2026-11 and reported by the owner, with the date where it is known. Firmware 2.7 for the
+0.6.0 tests, not recorded before. The debug cores add a 68K wait counter, read on a PC with `tools/check_wait_save.py`.
 
 ## Memory test core
 
@@ -47,6 +47,21 @@ Other games that ran well: Metal Slug 3 (SMA, CMC), Metal Slug X (first mission)
 Shodown V (one fight), Samurai Shodown V Special (64 MB of C ROM, two fights), The Super Spy (the logo shows on 3 of 3 starts).
 Metal Slug 3's save works in MVS and AES modes, left with Quit (2026-11-09).
 
+### NeoMillie 0.6.0, 2026-11-14
+
+On a debug build of 0.6.0, with the 68K Clock at 24 MHz, played by the owner with no fault in the picture reported: Metal Slug X,
+Metal Slug 3, Metal Slug 2, The King of Fighters '94, Fatal Fury 3, Samurai Shodown V Special and Neo Fight. Metal Slug 3 is
+the first game with the NEO-SMA chip run since the chip's bank switch takes its registered write data. In the counter's eight
+runs, all at 24 MHz, frames with no idle 68K cycle are 0.25% to 0.45% of a run of play.
+
+At 24 MHz an earlier build drew the BIOS's and the games' backgrounds wrong, with lines and distortion. The video chip holds one
+VRAM write and takes it up to 43 clocks of 48 MHz later, and an overclocked 68K's next write replaced the one still waiting. An
+overclocked 68K's access to the video chip now waits until 48 clocks after the last one's strobe.
+
+The Pocket does not load an `interact.json` of 12,465 bytes: "Load error in interact", "General error". The same menu written
+with no white space, 4,061 bytes, loads, and so does one of 11,547 bytes. The limit is not in Analogue's documentation. The
+package writes the file compact.
+
 ### 68K wait counter
 
 Read from the save file, one opening of the core per game, each left with Quit, read lag none, last error 0. With the memory
@@ -87,8 +102,40 @@ With `top-sp1.bin` and no disc, the 68K wait counter over about 4 minutes: 13,89
 | Region and CD/CDZ changes | The game loads after each |
 | Samurai Shodown RPG | Loads on the first Start Game in both modes (2026-11-08) |
 | KOF '99, '97, '95, Pulstar | Work at 2x |
-| Fatal Fury 3 | Works almost perfectly at 2x, with a few black frames |
+| Fatal Fury 3 | Works. Its black screens are the game's own: see below |
 | KOF '98, Art of Fighting, Samurai Shodown IV, Twinkle Star Sprites, Metal Slug 2, Aero Fighters 3 | Play at 2x and sound fine. Converted with `cd_convert.py` from one BIN per track and from a CHD |
+
+### NeoMillieCD 0.6.0, 2026-11-13 to 15
+
+On debug builds of 0.6.0, with `uni-bioscd.rom`. Seven loads of The King of Fighters '99 added up, timed by the core:
+
+| CD/CDZ | CD Turbo 4x | 68K Clock | Seven loads | Failed sectors |
+|---|---|---|---|---|
+| Off | Off | 12 MHz | 66.3 s | 0 |
+| On | Off | 12 MHz | 38.4 s | 0 |
+| Off | On | 12 MHz | 27.8 s | 0 |
+| On | On | 12 MHz | 27.8 s | 0 |
+| On | On | 16 MHz | 24.5 s | 0 |
+| On | On | 24 MHz | 23.6 s | 0 |
+
+Fatal Fury 3 blacks the screen after the first "Fight" of a match and at a round's end. The game turns video, the fix layer and
+the sprites off through the BIOS, and has the BIOS copy sounds to PCM RAM: 262,144 bytes after "Fight", two blocks of 114,688
+at a round's end. The copy is a 68K loop in the BIOS of 62 clocks for 2 bytes, the same in `neocd.bin` and in `uni-bioscd.rom`,
+so a console at 12 MHz takes 40.6 frames over the first, about 47 with the game's own frames around it. The core took 51 frames
+at 12 MHz and 36 at 24 MHz, with exactly 262,144 writes counted. With a 68K write to PCM RAM no longer waiting for the memory
+chip it takes 47 frames at 12 MHz, and 43 at a round's end. The cartridge version has no such black screen.
+
+Samurai Shodown RPG with CD Turbo 4x stayed black for half a minute after a reset, and was taken for a failure to load. Its
+directory is 88 sectors, 3,833 files, and the BIOS scans nearly all of it. The scan masks the decoder's interrupt for about 9 ms
+a sector, three sectors' time at 4x, and for every sector that went by unseen the BIOS sought again, 22 frames each. With CD
+Turbo 4x a sector now waits, for 50 ms at most, while that interrupt is masked. At 1x and 2x nothing waits, as on a console.
+
+Loading a saved game of Samurai Shodown RPG with CD Turbo 4x then failed: an illegal instruction, a load that never ended, or a
+reboot. The game builds its own list of the disc's files at start, with the decoder's interrupt open from the first directory
+sector to the last, and reads each sector where the BIOS put it. At 4x the next sector came in while it was still reading, the
+names in the part overwritten were missing from its list, and a later load of one of them read from LBA 0. With CD Turbo 4x a
+program that keeps the interrupt open from one sector to the next now gets them at 2x; the BIOS's loaders, which mask it, keep
+4x. On 2026-11-15 the save loaded every time, once at 24 MHz and three times at 12 MHz.
 
 Metal Slug and Metal Slug 2 feel slower on CD than on the AES core, with more slowdown only under heavy load, and the music and
 sound differ slightly.
@@ -117,6 +164,8 @@ On the 5CEBA4F23C8, of 18,480 ALMs and 308 M10K, with a budget of 16,600 ALMs an
 |---|---|---|
 | NeoMillie 0.5.1 | 8,994 | 280 |
 | NeoMillieCD 0.5.3 | 11,527 | 281 |
+| NeoMillie 0.6.0 | 9,246 | 280 |
+| NeoMillieCD 0.6.0 | 12,846 | 281 |
 
 ---
 

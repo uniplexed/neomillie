@@ -53,7 +53,7 @@ module tb_mix_overlap;
         .CD_TR_AREA(3'd0), .CD_EXT_WR(1'b0), .CD_EXT_RD(1'b0), .CD_USE_FIX(1'b0),
         .CD_TR_RD_FIX(1'b0), .CD_TR_WR_FIX(1'b0), .CD_BANK_SPR(2'd0),
         .CD_USE_SPR(1'b0), .CD_TR_RD_SPR(1'b0), .CD_TR_WR_SPR(1'b0),
-        .CD_TR_WR_PCM(1'b0), .CD_BANK_PCM(1'b0), .CD_PCM_DTACK(),
+        .CD_TR_WR_PCM(1'b0), .CD_BANK_PCM(1'b0), .CD_FIX_DTACK(),
         .fx_req(), .fx_we(), .fx_word(), .fx_be(), .fx_wdata(), .fx_ack(1'b0), .fx_rdata(16'h0),
         .DMA_ADDR_OUT(24'h0), .DMA_ADDR_IN(24'h0), .DMA_DATA_OUT(16'h0), .DMA_RUNNING(1'b0), .DMA_SDRAM_BUSY(),
         .adpcma_addr(25'd0), .adpcma_dout(), .adpcma_req(1'b0), .adpcma_ack(adpcma_ack),

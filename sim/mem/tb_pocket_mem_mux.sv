@@ -43,6 +43,11 @@ module tb_pocket_mem_mux;
     end
     always @(negedge clk) cyc++;
 
+    // The APF bridge, asynchronous to the PLL, for the CD ring's write path
+    localparam real PERIOD_74 = 13.468;
+    logic clk74 = 0;
+    always #(PERIOD_74 / 2) clk74 = ~clk74;
+
     // ---- DUT inputs ----
     logic        mem_init = 1, nRESET = 0, nSYSTEM_G = 1, SYSTEM_CDx = 0;
     logic [20:1] M68K_ADDR = 0;
@@ -67,7 +72,7 @@ module tb_pocket_mem_mux;
 
     // ---- DUT outputs and pins ----
     wire  [15:0] PROM_DATA, SROM_DATA;
-    wire         PROM_DATA_READY, DMA_SDRAM_BUSY, CD_EXT_WR_READY, CD_PCM_DTACK, dl_overflow;
+    wire         PROM_DATA_READY, DMA_SDRAM_BUSY, CD_EXT_WR_READY, CD_FIX_DTACK, dl_overflow;
     wire         fx_req, fx_we, fx_ack;
     wire  [16:0] fx_word;
     wire  [15:0] fx_wdata, fx_rdata;
@@ -86,6 +91,25 @@ module tb_pocket_mem_mux;
     wire         c0_clk, c0_adv, c0_cre, c0_ce0, c0_ce1, c0_oe, c0_we, c0_ub, c0_lb;
     wire         c1_clk, c1_adv, c1_cre, c1_ce0, c1_ce1, c1_oe, c1_we, c1_ub, c1_lb;
 
+    // ---- The CD ring: bridge writes through cd_ring_wr, and the read client on CLK_48M ----
+    wire  [31:0] bridge_addr, bridge_wr_data;
+    wire         bridge_wr, bridge_rd;
+    wire         rw_valid, rw_take;
+    wire  [24:0] rw_word;
+    wire  [15:0] rw_data;
+    logic        rr_req = 0;
+    logic [24:0] rr_word = 0;
+    wire         rr_done;
+    wire  [63:0] rr_data;
+
+    bridge_bfm bbfm (.clk(clk74), .bridge_addr(bridge_addr), .bridge_wr(bridge_wr), .bridge_wr_data(bridge_wr_data),
+                     .bridge_rd(bridge_rd), .bridge_rd_data(32'd0));
+
+    cd_ring_wr ring_wr (
+        .clk_74a(clk74), .bridge_wr(bridge_wr), .bridge_addr(bridge_addr), .bridge_wr_data(bridge_wr_data),
+        .CLK_96M(clk), .rw_valid(rw_valid), .rw_word(rw_word), .rw_data(rw_data), .rw_take(rw_take)
+    );
+
     pocket_mem_mux #(.CD_BUILD(1)) dut (
         .CLK(clk), .MEM_INIT(mem_init), .nRESET(nRESET), .nSYSTEM_G(nSYSTEM_G), .SYSTEM_CDx(SYSTEM_CDx),
         .M68K_ADDR(M68K_ADDR), .M68K_DATA(M68K_DATA), .nAS(nAS), .nLDS(nLDS), .nUDS(nUDS),
@@ -97,7 +121,7 @@ module tb_pocket_mem_mux;
         .CD_TR_AREA(CD_TR_AREA), .CD_EXT_WR(CD_EXT_WR), .CD_EXT_RD(CD_EXT_RD), .CD_EXT_WR_READY(CD_EXT_WR_READY), .CD_USE_FIX(CD_USE_FIX),
         .CD_TR_RD_FIX(CD_TR_RD_FIX), .CD_TR_WR_FIX(CD_TR_WR_FIX), .CD_BANK_SPR(CD_BANK_SPR),
         .CD_USE_SPR(CD_USE_SPR), .CD_TR_RD_SPR(CD_TR_RD_SPR), .CD_TR_WR_SPR(CD_TR_WR_SPR),
-        .CD_TR_WR_PCM(CD_TR_WR_PCM), .CD_BANK_PCM(CD_BANK_PCM), .CD_PCM_DTACK(CD_PCM_DTACK),
+        .CD_TR_WR_PCM(CD_TR_WR_PCM), .CD_BANK_PCM(CD_BANK_PCM), .CD_FIX_DTACK(CD_FIX_DTACK),
         .fx_req(fx_req), .fx_we(fx_we), .fx_word(fx_word), .fx_be(fx_be), .fx_wdata(fx_wdata), .fx_ack(fx_ack), .fx_rdata(fx_rdata),
         .DMA_ADDR_OUT(DMA_ADDR_OUT), .DMA_ADDR_IN(DMA_ADDR_IN), .DMA_DATA_OUT(DMA_DATA_OUT), .DMA_RUNNING(DMA_RUNNING),
         .DMA_SDRAM_BUSY(DMA_SDRAM_BUSY),
@@ -106,6 +130,8 @@ module tb_pocket_mem_mux;
         .v2_offset(V2_OFFSET),
         .m1_addr(m1_addr), .m1_dout(m1_dout), .m1_req(m1_req), .m1_ack(m1_ack),
         .BK_RD(1'b0), .BK_WR(2'b00), .bk_req(1'b0), .bk_we(1'b0), .bk_addr(15'd0), .bk_wdata(16'd0), .bk_ack(), .bk_rdata(), .ROM_COPY_BUSY(),
+        .rw_valid(rw_valid), .rw_word(rw_word), .rw_data(rw_data), .rw_take(rw_take),
+        .rr_req(rr_req), .rr_word(rr_word), .rr_done(rr_done), .rr_data(rr_data),
         .dram_dq(dram_dq), .dram_a(dram_a), .dram_dqm(dram_dqm), .dram_ba(dram_ba), .dram_we_n(dram_we_n),
         .dram_ras_n(dram_ras_n), .dram_cas_n(dram_cas_n), .dram_cke(dram_cke), .dram_clk(dram_clk),
         .cram0_a(c0_a), .cram0_dq(c0_dq), .cram0_wait(1'b0), .cram0_clk(c0_clk), .cram0_adv_n(c0_adv),
@@ -620,7 +646,7 @@ module tb_pocket_mem_mux;
         CD_EXT_WR = 1; CD_TR_WR_FIX = 1; CD_TR_WR_SPR = 1; CD_TR_WR_PCM = 1;
         tick(40);
         check(fx_req == fx_ack && u_fix.state == u_fix.S_IDLE && s_oe === 1'b1, "CD request reached the SRAM with SYSTEM_CDx=0");
-        check(CD_PCM_DTACK === 1'b0, "CD_PCM_DTACK with SYSTEM_CDx=0");
+        check(CD_FIX_DTACK === 1'b0, "CD_FIX_DTACK with SYSTEM_CDx=0");
         check(mem_c0.access_count == n0 && mem_c1.access_count == n1, "CD request reached a CRAM with SYSTEM_CDx=0");
         check(mem_sd.mem.size() == sd0, "CD request wrote the SDRAM with SYSTEM_CDx=0");
         check(DMA_SDRAM_BUSY === 1'b0, "DMA_SDRAM_BUSY with SYSTEM_CDx=0");
@@ -1430,7 +1456,7 @@ module tb_pocket_mem_mux;
         $display("test_debug_dma_counts done: stalls PROG %0d, FIX %0d, SPR %0d, PCM %0d CLK_96M", dbg_w[4], dbg_w[5], dbg_w[6], dbg_w[7]);
     endtask
 
-    // A CPU write in the window. The top holds nDTACK: on the queue for SPR, on CD_PCM_DTACK for PCM and FIX
+    // A CPU write in the window. The top holds nDTACK: on the queue for SPR and PCM, on CD_FIX_DTACK for FIX
     task automatic tr_write(tr_area_t area, input logic [20:1] a, input logic [15:0] d, input logic [1:0] lanes);
         longint t0;
         tick;
@@ -1438,9 +1464,9 @@ module tb_pocket_mem_mux;
         tr_strobe(area, 1'b1);
         t0 = cyc;
         tick;
-        if (area == W_SPR) while (!CD_EXT_WR_READY && cyc - t0 < 100) tick;
-        else while (!CD_PCM_DTACK && cyc - t0 < 100) tick;
-        check(area == W_SPR ? CD_EXT_WR_READY === 1'b1 : CD_PCM_DTACK === 1'b1, $sformatf("window write %0d at %h: no DTACK", int'(area), a));
+        if (area != W_FIX) while (!CD_EXT_WR_READY && cyc - t0 < 100) tick;
+        else while (!CD_FIX_DTACK && cyc - t0 < 100) tick;
+        check(area != W_FIX ? CD_EXT_WR_READY === 1'b1 : CD_FIX_DTACK === 1'b1, $sformatf("window write %0d at %h: no DTACK", int'(area), a));
         tick;
         tr_strobe(area, 1'b0);
         {nUDS, nLDS} = 2'b11; nAS = 1;
@@ -1645,34 +1671,55 @@ module tb_pocket_mem_mux;
         int cases [4][2] = '{'{0, 'h00100}, '{0, 'h00101}, '{1, 'h7FFFE}, '{1, 'h7FFFF}};
         logic [7:0] b;
         SYSTEM_CDx = 1;
+        // A CPU byte is posted, as SPR's: the 68K's cycle does not wait for the chip, and no read of the byte overtakes it
         foreach (cases[c]) begin
             int k = (cases[c][0] << 19) | cases[c][1];
             bit [22:0] w = 23'(int'(MAP_PCM >> 1) + (k >> 1));
-            longint t0;
-            bit acked = 0;
             mem_c1.mem[w] = 16'hC33C;
             CD_BANK_PCM = 1'(cases[c][0]);
             tick;
-            check(CD_PCM_DTACK === 1'b0, "CD_PCM_DTACK up before the write");
             M68K_ADDR = 20'(cases[c][1]); M68K_DATA = 16'hA55A; nUDS = 1; nLDS = 0; nAS = 0; CD_TR_WR_PCM = 1;
-            t0 = cyc;
             tick;
-            while (!CD_PCM_DTACK && cyc - t0 < 100) begin
-                if (dut.c1_ack) acked = 1;
-                tick;
-            end
-            check(CD_PCM_DTACK === 1'b1, "no CD_PCM_DTACK");
-            check(acked, "CD_PCM_DTACK rose before the chip's ack");
+            check(CD_EXT_WR_READY === 1'b1, "a PCM write with the queue empty held the 68K");
+            check(CD_FIX_DTACK === 1'b0, "a PCM write raised FIX's acknowledge");
+            // The shortest cycle an overclocked 68K gives it, then a read of the same byte at once
+            tick(3);
+            check(CD_FIX_DTACK === 1'b0, "a PCM write raised FIX's acknowledge");
+            CD_TR_WR_PCM = 0; nLDS = 1; nAS = 1;
+            adpcm_read(1'b0, 25'(k), b);
+            check(b == 8'h5A, $sformatf("ADPCM-A reads %h at %h right after the write, want 5A", b, k));
             check(mem_c1.mem[w] == (k & 1 ? 16'h5A3C : 16'hC35A), $sformatf("PCM byte %h: the word holds %h", k, mem_c1.mem[w]));
-            // It stays up with the cycle, and only that
-            tick(8);
-            check(CD_PCM_DTACK === 1'b1, "CD_PCM_DTACK fell with nAS low");
+            check(CD_FIX_DTACK === 1'b0, "FIX's acknowledge up after a PCM write");
+        end
+        // A long cycle, as a 12 MHz 68K's with wait states: the byte reaching the chip is no acknowledge of FIX's
+        begin
+            bit rose = 0;
+            CD_BANK_PCM = 0;
+            M68K_ADDR = 20'h00300; M68K_DATA = 16'h0077; nUDS = 1; nLDS = 0; nAS = 0; CD_TR_WR_PCM = 1;
+            repeat (60) begin tick; if (CD_FIX_DTACK) rose = 1; end
+            check(!rose, "a PCM byte in the chip raised FIX's acknowledge");
+            check(mem_c1.mem[23'(int'(MAP_PCM >> 1) + 'h180)][7:0] == 8'h77, "the PCM byte of a long cycle did not land");
             CD_TR_WR_PCM = 0; nLDS = 1; nAS = 1;
             tick(2);
-            check(CD_PCM_DTACK === 1'b0, "CD_PCM_DTACK did not fall with nAS");
-            // What ADPCM-A reads there
-            adpcm_read(1'b0, 25'(k), b);
-            check(b == 8'h5A, $sformatf("ADPCM-A reads %h at %h", b, k));
+        end
+        // Bytes faster than the chip takes them: the queue fills, the 68K is held, and none is lost
+        begin
+            int held = 0;
+            CD_BANK_PCM = 0;
+            for (int i = 0; i < 16; i++) mem_c1.mem[23'(int'(MAP_PCM >> 1) + 'h400 + i)] = 16'h0000;
+            for (int i = 0; i < 32; i++) begin
+                M68K_ADDR = 20'('h800 + i); M68K_DATA = 16'(8'h40 + i); nUDS = 1; nLDS = 0; nAS = 0; CD_TR_WR_PCM = 1;
+                tick;
+                while (!CD_EXT_WR_READY) begin held++; tick; end
+                tick;
+                CD_TR_WR_PCM = 0; nLDS = 1; nAS = 1;
+                tick;
+            end
+            tick(100);
+            check(held != 0, "32 PCM bytes 3 clocks apart never filled the queue: the test does not reach the hold");
+            for (int i = 0; i < 16; i++)
+                check(mem_c1.mem[23'(int'(MAP_PCM >> 1) + 'h400 + i)] == {8'(8'h40 + 2 * i + 1), 8'(8'h40 + 2 * i)},
+                      $sformatf("PCM word %0d after a burst: %h", i, mem_c1.mem[23'(int'(MAP_PCM >> 1) + 'h400 + i)]));
         end
         // A DMA word: the DMA's address and data, and a DTACK nobody waits for does not stay up
         begin
@@ -1685,7 +1732,7 @@ module tb_pocket_mem_mux;
             DMA_RUNNING = 0;
             tick(2);
             check(mem_c1.mem[23'(k >> 1)] == 16'hC377, $sformatf("PCM by DMA: %h", mem_c1.mem[23'(k >> 1)]));
-            check(CD_PCM_DTACK === 1'b0, "CD_PCM_DTACK up after a DMA word");
+            check(CD_FIX_DTACK === 1'b0, "CD_FIX_DTACK up after a DMA word");
             CD_BANK_PCM = 0;
         end
         SYSTEM_CDx = 0;
@@ -1845,7 +1892,7 @@ module tb_pocket_mem_mux;
             M68K_ADDR = 20'h00000; M68K_DATA = 16'h0099; nLDS = 0; nAS = 0; CD_TR_WR_FIX = 1;
             tick(60);
             check(SROM_DATA == d, $sformatf("video read met by a write: %h, expected %h", SROM_DATA, d));
-            check(CD_PCM_DTACK === 1'b1, "write met by a video read: no DTACK");
+            check(CD_FIX_DTACK === 1'b1, "write met by a video read: no DTACK");
             CD_TR_WR_FIX = 0; nLDS = 1; nAS = 1; PCK2 = 1;
             tick(4);
             check(mem_s.mem[1][7:0] == 8'h99 && mem_s.mem[1][15:8] == old[15:8], $sformatf("write met by a video read: %h", mem_s.mem[1]));
@@ -1910,6 +1957,209 @@ module tb_pocket_mem_mux;
         $display("test_sprite_deadline_under_full_load done");
     endtask
 
+    // ---- CD ring: cd_ring_wr's writes from the bridge, and the read client ----
+    localparam logic [24:0] RING_WORD  = 25'h0200000;  // SDRAM byte 0x400000, after the 4 MB of SPR RAM
+    localparam int          RING_BYTES = 602112;        // 16 chunks of 16 sectors of 2,352 bytes
+
+    int rw_takes = 0;
+    always @(posedge clk) if (rw_take) rw_takes++;
+
+    // Bridge word i of the ring, the first byte of the file in [31:24]
+    function automatic logic [31:0] ring_bw(int i);
+        return {hash(601, i), hash(602, i)};
+    endfunction
+
+    // SDRAM word w of the ring: bridge word w / 2 gives {b1, b0}, then {b3, b2}
+    function automatic logic [15:0] ring_sd_exp(int w);
+        logic [31:0] d = ring_bw(w >> 1);
+        return w[0] ? {d[7:0], d[15:8]} : {d[23:16], d[31:24]};
+    endfunction
+
+    function automatic logic [63:0] ring_burst_exp(int w);
+        return {ring_sd_exp(w + 3), ring_sd_exp(w + 2), ring_sd_exp(w + 1), ring_sd_exp(w)};
+    endfunction
+
+    // A read as the CLK_48M client makes it: the word and the toggle on one CLK_48M edge, held until done follows
+    task automatic ring_read(input logic [24:0] w, output logic [63:0] q, output int lat);
+        longint t0;
+        @(posedge clk48);
+        #1 rr_word = w;
+        rr_req = ~rr_req;
+        t0 = cyc;
+        while (rr_done !== rr_req && cyc - t0 < 400) tick;
+        lat = int'(cyc - t0);
+        check(rr_done === rr_req, $sformatf("ring read at %h not answered", w));
+        q = rr_data;
+    endtask
+
+    task automatic test_ring_write_lands();
+        int n0 = rw_takes;
+        int end_byte = int'(RING_WORD) * 2 + RING_BYTES;
+        logic [15:0] past = sd_read(end_byte);
+        SYSTEM_CDx = 1;
+        for (int i = 0; i < 64; i++) bbfm.write32(32'h7400_0000 + 32'(i * 4), ring_bw(i));
+        // The last word of the window lands; past its end, and in the windows around it, nothing does
+        bbfm.write32(32'h7400_0000 + 32'(RING_BYTES - 4), 32'hA1A2_A3A4);
+        bbfm.write32(32'h7400_0000 + 32'(RING_BYTES), 32'hB1B2_B3B4);
+        bbfm.write32(32'h7300_0000, 32'hC1C2_C3C4);
+        bbfm.write32(32'h7500_0000, 32'hC1C2_C3C4);
+        bbfm.write32(32'h7000_0000, 32'hC1C2_C3C4);
+        tick(40);
+        check(rw_takes - n0 == 130, $sformatf("%0d SDRAM writes for 65 ring words", rw_takes - n0));
+        for (int w = 0; w < 128; w++)
+            check(sd_read((int'(RING_WORD) + w) * 2) == ring_sd_exp(w),
+                  $sformatf("ring word %0d holds %h, expected %h", w, sd_read((int'(RING_WORD) + w) * 2), ring_sd_exp(w)));
+        check(sd_read(end_byte - 4) == 16'hA2A1 && sd_read(end_byte - 2) == 16'hA4A3,
+              $sformatf("last ring word: %h %h", sd_read(end_byte - 4), sd_read(end_byte - 2)));
+        check(sd_read(end_byte) == past, "a write past the ring's end landed");
+        SYSTEM_CDx = 0;
+        $display("test_ring_write_lands done");
+    endtask
+
+    task automatic test_ring_read_burst();
+        logic [63:0] q;
+        int lat0, lat1;
+        SYSTEM_CDx = 1;
+        ring_read(RING_WORD, q, lat0);
+        check(q === ring_burst_exp(0), $sformatf("ring burst 0: %h, expected %h", q, ring_burst_exp(0)));
+        ring_read(RING_WORD + 25'd124, q, lat1);
+        check(q === ring_burst_exp(124), $sformatf("ring burst 124: %h, expected %h", q, ring_burst_exp(124)));
+        SYSTEM_CDx = 0;
+        $display("test_ring_read_burst done: %0d and %0d clocks, idle", lat0, lat1);
+    endtask
+
+    // Ring writes at the bridge's rate and ring reads of the words test_ring_write_lands left, with the sprite at full rate
+    task automatic test_ring_with_sprites();
+        int n0 = rw_takes, reads = 0, lat_worst = 0;
+        bit wr_over = 0;
+        nRESET = 1;     // test_debug_dma_counts leaves it low: the ring tests before ran under reset, the sprite needs it high
+        fill_memories();
+        period = PERIOD_AES;
+        tick;
+        foreach (lat_max[c]) begin lat_max[c] = 0; lat_sum[c] = 0; served[c] = 0; missed[c] = 0; end
+        video_enforced = 1;
+        SYSTEM_CDx = 1;
+        stop = 0;
+        fork
+            sprite_client(1 << 30);
+            fork
+                begin
+                    for (int i = 64; i < 64 + 256; i++) bbfm.write32(32'h7400_0000 + 32'(i * 4), ring_bw(i));
+                    wr_over = 1;
+                end
+                while (!wr_over) begin
+                    logic [63:0] q;
+                    int lat;
+                    int k = $urandom_range(31) * 4;
+                    ring_read(RING_WORD + 25'(k), q, lat);
+                    check(q === ring_burst_exp(k), $sformatf("ring burst %0d under sprites: %h, expected %h", k, q, ring_burst_exp(k)));
+                    if (lat > lat_worst) lat_worst = lat;
+                    reads++;
+                    tick($urandom_range(40));
+                end
+            join
+        join_any
+        // The sprite client only ends with its count: it stops at the next period's end
+        disable fork;
+        PCK1 = 1;
+        tick(40);
+        $display("ring with sprites: sprite worst %0d clk, deadline %0d, served %0d, missed %0d; %0d ring reads, worst %0d clk",
+                 lat_max[SPR], deadline[SPR], served[SPR], missed[SPR], reads, lat_worst);
+        check(missed[SPR] == 0, $sformatf("ring with sprites: %0d sprite misses", missed[SPR]));
+        check(served[SPR] > 300, $sformatf("ring with sprites: only %0d sprite fetches", served[SPR]));
+        check(reads > 100, $sformatf("ring with sprites: only %0d ring reads", reads));
+        check(lat_worst <= 200, $sformatf("a ring read took %0d clocks", lat_worst));
+        check(rw_takes - n0 == 512, $sformatf("%0d SDRAM writes for 256 ring words", rw_takes - n0));
+        for (int w = 128; w < 640; w++)
+            check(sd_read((int'(RING_WORD) + w) * 2) == ring_sd_exp(w), $sformatf("ring word %0d under sprites", w));
+        SYSTEM_CDx = 0;
+        stop = 0;
+        $display("test_ring_with_sprites done");
+    endtask
+
+    // The SPR write-then-read margin of test_cd_dma_write_bandwidth, with the ring writing and reading beside it
+    // (a ring access granted a clock before a 68K write delays the write's head), then a directed sweep: a ring
+    // read requested d clocks before a SPR write, with the refresh counter at a point where a refresh toggle lands
+    // between them
+    task automatic test_spr_margin_with_ring();
+        localparam int SPR_BASE = 'h40000 * 2;
+        int worst_ring, worst_dir, reads = 0, n0 = rw_takes;
+        bit wr_over = 0;
+        nRESET = 1;
+        fill_memories();
+        period = PERIOD_AES;
+        tick;
+        foreach (lat_max[c]) begin lat_max[c] = 0; lat_sum[c] = 0; served[c] = 0; missed[c] = 0; end
+        video_enforced = 1;
+        SYSTEM_CDx = 1;
+        CD_BANK_SPR = 2'd3;
+        stop = 0;
+        spr_to_head_max = 0;
+        spr_stale_reads = 0;
+        fork
+            sprite_client(1 << 30);
+            fork
+                dma_stream(W_SPR, 1000, SPR_BASE);
+                begin
+                    wait (DMA_RUNNING);
+                    while (DMA_RUNNING) begin
+                        for (int i = 0; i < 4 && DMA_RUNNING; i++) bbfm.write32(32'h7400_0000 + 32'(i * 4), ring_bw(i));
+                    end
+                    wr_over = 1;
+                end
+                begin
+                    wait (DMA_RUNNING);
+                    while (DMA_RUNNING) begin
+                        logic [63:0] q;
+                        int lat;
+                        ring_read(RING_WORD + 25'($urandom_range(31) * 4), q, lat);
+                        reads++;
+                        tick($urandom_range(40));
+                    end
+                end
+            join
+        join_any
+        disable fork;
+        PCK1 = 1;
+        tick(40);
+        worst_ring = spr_to_head_max;
+        $display("SPR write margin with ring traffic: write edge to queue head at worst %0d clocks (read at %0d), %0d stale reads, %0d ring reads, %0d sprite misses",
+                 worst_ring, WR_TO_RD, spr_stale_reads, reads, missed[SPR]);
+        check(worst_ring < WR_TO_RD, $sformatf("with ring traffic a SPR write waits %0d clocks, a read can overtake it", worst_ring));
+        check(spr_stale_reads == 0, "stale SPR reads with ring traffic");
+        check(reads > 100, $sformatf("only %0d ring reads beside the SPR writes", reads));
+        check(missed[SPR] == 0, $sformatf("%0d sprite misses with ring traffic", missed[SPR]));
+        // Directed: no sprite, the bus idle but for the ring read, which is granted a clock before the write
+        stop = 1;
+        tick(60);
+        spr_to_head_max = 0;
+        foreach (lat_max[c]) lat_max[c] = 0;
+        for (int ph = 0; ph < 2; ph++)
+            for (int d = 0; d < 32; d++) begin
+                logic [63:0] q;
+                int lat;
+                bit stalled;
+                while (dut.rfsh_since != (ph ? 718 : 6)) tick;
+                fork
+                    ring_read(RING_WORD + 25'(d * 4), q, lat);
+                    begin
+                        tick(d);
+                        tr_dma_word(W_SPR, SPR_BASE + d * 2, hash(503, d), stalled);
+                    end
+                join
+                tick(40);
+            end
+        worst_dir = spr_to_head_max;
+        $display("SPR write margin, ring read then write with a refresh between: write edge to queue head at worst %0d clocks (read at %0d), %0d stale reads",
+                 worst_dir, WR_TO_RD, spr_stale_reads);
+        check(worst_dir < WR_TO_RD, $sformatf("directed: a SPR write waits %0d clocks, a read can overtake it", worst_dir));
+        check(spr_stale_reads == 0, "stale SPR reads in the directed sweep");
+        CD_BANK_SPR = 2'd0;
+        SYSTEM_CDx = 0;
+        stop = 0;
+        $display("test_spr_margin_with_ring done");
+    endtask
+
     initial begin
         tick(8);
         mem_init = 0;
@@ -1948,6 +2198,10 @@ module tb_pocket_mem_mux;
         test_fix_sram_deadline();
         test_loader_overflow();
         test_debug_dma_counts();
+        test_ring_write_lands();
+        test_ring_read_burst();
+        test_ring_with_sprites();
+        test_spr_margin_with_ring();
 
         // Every toggle became one refresh
         while (dut.rfsh_since < 16) tick;

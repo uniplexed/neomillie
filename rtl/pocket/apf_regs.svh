@@ -40,7 +40,6 @@
 
 // Old game JSON locations. The 249 files write 0x24, 0x28, 0x2C, 0x30, 0x3C, 0x40, 0x4C, 0x30C, 0x310,
 // 0x314, 0x400, 0x410
-localparam [11:0] REG_DIPSW_OLD       = 12'h008;
 localparam [11:0] REG_SYSTEM_TYPE_OLD = 12'h00C;
 localparam [11:0] REG_MEMCARD_OLD     = 12'h010;
 localparam [11:0] REG_PCHIP_MAIN_OLD  = 12'h024;
@@ -53,13 +52,20 @@ localparam [11:0] REG_V2_MASK_OLD     = 12'h04C;
 localparam [11:0] REG_C1_WAIT_OLD     = 12'h054;
 // Core
 localparam [11:0] REG_CORE_RESET      = 12'h100;
-localparam [11:0] REG_DIPSW           = 12'h104;
+localparam [11:0] REG_DIPSW           = 12'h104;    // 1 = on: bit 0 settings mode, 1 freeplay, 2 freeze
 localparam [11:0] REG_SYSTEM_TYPE     = 12'h108;
-localparam [11:0] REG_MEMCARD         = 12'h10C;
+localparam [11:0] REG_MEMCARD         = 12'h10C;    // bit 0: 1 = card unplugged
+localparam [11:0] REG_CPU_CLOCK       = 12'h110;    // 0 = 12 MHz, 1 = 16 MHz, 2 = 24 MHz; a change restarts the core
+localparam [11:0] REG_LR_BUTTONS      = 12'h118;    // 0 L A+B, R C+D; 1 L ABC; 2 R ABC (MiSTer's ABC key)
 // Video
 localparam [11:0] REG_VIDEO_MODE      = 12'h200;
+localparam [11:0] REG_SCREEN_X        = 12'h204;    // signed pixels, right is positive
+localparam [11:0] REG_SCREEN_Y        = 12'h208;    // signed lines, down is positive
 localparam [11:0] REG_VIDEO_RATIO     = 12'h20C;    // bit 2: 320 wide, bits 2:0: scaler slot
-// Sound and V2
+// Sound and V2. The mutes: 1 = silent
+localparam [11:0] REG_CH_MUTE         = 12'h300;    // the six ADPCM-A channels
+localparam [11:0] REG_SND_MUTE        = 12'h304;    // bit 0 FM, 1 ADPCM-A, 2 ADPCM-B, 3 PSG
+localparam [11:0] REG_STEREO_MIX      = 12'h318;    // 0 none, 1 25%, 2 50%, 3 100% (mono)
 localparam [11:0] REG_USE_PCM         = 12'h30C;
 localparam [11:0] REG_V2_OFFSET       = 12'h310;
 localparam [11:0] REG_V2_MASK         = 12'h314;
@@ -77,12 +83,14 @@ localparam [11:0] REG_ADPCMA_EXT      = 12'h508;
 // as REG_SYSTEM_TYPE is.
 localparam [11:0] REG_CD_TYPE         = 12'h600;    // bit 0: 1 = CDZ, to status[2]
 localparam [11:0] REG_CD_REGION       = 12'h604;    // 0 US, 1 EU, 2 JP, 3 AS (MiSTer's status[11:10]; the top remaps)
-localparam [11:0] REG_CD_SPEED        = 12'h608;    // 0 to 3 = 1x to 4x, to status[30:29]
 localparam [11:0] REG_CD_LID          = 12'h60C;    // bit 0: 1 = open, to status[15]
+// Cart build: the region the UniBIOS is made to keep, see bios_model. 0 = the BIOS's own setting, 1 JP, 2 US, 3 EU
+localparam [11:0] REG_CART_REGION     = 12'h610;
+// CD build: CD Turbo 4x (beta), the 4x drive that reads ahead through the SDRAM ring
+localparam [11:0] REG_CD_TURBO        = 12'h614;    // bit 0: 1 = Turbo 4x, to status[12]
 
-// Accepted and ignored, with every other write in 0xF0000000-0xF0000FFF: 0x014 use_mouse, 0x01C and
-// 0x300 ch_enable, 0x020 and 0x304 snd_enable, 0x050 and 0x308 V1ROM_MASK (MiSTer builds its own),
-// 0x110 CPU_overclock (backlog), 0x204 and 0x208 screen position.
+// Accepted and ignored, with every other write in 0xF0000000-0xF0000FFF: 0x014 use_mouse, 0x01C ch_enable,
+// 0x020 snd_enable, 0x050 and 0x308 V1ROM_MASK (MiSTer builds its own).
 
 // Save slots in the data table, sizes as the Overdrive answers them (size_exact is null)
 localparam [31:0] SLOT_MEMCARD = 32'h101;

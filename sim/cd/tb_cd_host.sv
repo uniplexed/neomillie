@@ -15,9 +15,11 @@
 //                                       fetch arriving during an openfile waits for it; err 3 for an unknown name
 // test_fetch_error_leaves_slot_invalid  err 1 (fail_next) and err 2 (past the file): fr_err with fr_done, the
 //                                       slot's words unchanged; the next fetch clears fr_err
+// test_fetch_long_read                  a fetch of 37,632 bytes to bridge 0x7400_9300: the command carries them as given
 // test_getfile_response_path            the slot's path, with spaces, ' and ',', read back on the path port
 // test_wait_slot_write                  the wait counter's save, one write of id 0x103 per rising edge of a level
 //                                       held high, after the openfile in flight, with its 4,096 bytes
+// test_ring_window_not_bank             writes to the CD ring's window, 0x7400_0000 up, change no bank word
 `timescale 1ns/1ps
 module tb_cd_host;
 
@@ -76,9 +78,9 @@ module tb_cd_host;
 
     // ---- DUT ----
     logic        mr_req = 0, fr_req = 0, ws_req = 0, path_wr = 0;
-    logic  [1:0] mr_kind = 0, mr_bank_slot = 0, fr_bank_slot = 0;
+    logic  [1:0] mr_kind = 0, mr_bank_slot = 0;
     logic [15:0] mr_slot = 0, fr_slot = 0;
-    logic [31:0] mr_offset = 0, mr_len = 0, fr_offset = 0, path_wdata = 0;
+    logic [31:0] mr_offset = 0, mr_len = 0, fr_offset = 0, fr_bridge = 0, fr_len = 0, path_wdata = 0;
     logic [11:0] bank_rd_addr = 0, bank_rd_addr_74 = 0;
     logic  [7:0] path_addr = 0;
     wire         mr_done, fr_done, fr_err, ws_done;
@@ -95,7 +97,7 @@ module tb_cd_host;
         .target_buffer_param_struct(param_struct), .target_buffer_resp_struct(resp_struct),
         .bridge_addr, .bridge_wr, .bridge_wr_data, .bridge_rd, .bridge_rd_data(host_rd_data),
         .mr_req, .mr_kind, .mr_slot, .mr_offset, .mr_len, .mr_bank_slot, .mr_done, .mr_err,
-        .fr_req, .fr_slot, .fr_offset, .fr_bank_slot, .fr_done, .fr_err,
+        .fr_req, .fr_slot, .fr_offset, .fr_bridge, .fr_len, .fr_done, .fr_err,
         .ws_req, .ws_done, .ws_err,
         .bank_rd_addr, .bank_rd_q, .bank_rd_addr_74, .bank_rd_q_74,
         .path_addr, .path_wr, .path_wdata, .path_q
@@ -123,7 +125,7 @@ module tb_cd_host;
 
     // ---- Clients ----
     task automatic mount_start(input logic [1:0] kind, input logic [15:0] slot, input int offset, input int len,
-                               input logic [1:0] bank);
+                               input logic [2:0] bank);
         @(posedge clk74);
         mr_kind <= kind;
         mr_slot <= slot;
@@ -146,11 +148,12 @@ module tb_cd_host;
         mount_wait(err);
     endtask
 
-    task automatic fetch_start(input logic [15:0] slot, input int offset, input logic [1:0] bank);
+    task automatic fetch_start(input logic [15:0] slot, input int offset, input logic [2:0] bank);
         @(posedge clk48);
         fr_slot <= slot;
         fr_offset <= offset;
-        fr_bank_slot <= bank;
+        fr_bridge <= 32'h7000_0000 | {17'd0, bank, 12'd0};
+        fr_len <= SECTOR;
         @(posedge clk48);
         fr_req <= ~fr_req;
     endtask
@@ -362,6 +365,29 @@ module tb_cd_host;
         check_slot(1, PATTERN, 6 * SECTOR, "good fetch after the errors");
     endtask
 
+    // A read of any length to any bridge address: the command carries the client's values as given. The host
+    // refuses it (the test files are 8 sectors), which is all the log needs.
+    task automatic test_fetch_long_read();
+        logic ferr;
+        int n0;
+        test = "test_fetch_long_read";
+        n0 = host_cmds();
+        @(posedge clk48);
+        fr_slot <= 3;
+        fr_offset <= 32'd23520;
+        fr_bridge <= 32'h7400_9300;
+        fr_len <= 32'd37632;
+        @(posedge clk48);
+        fr_req <= ~fr_req;
+        fetch_wait(ferr);
+        check(host_cmds() == n0 + 1, $sformatf("%0d host commands for one long read", host_cmds() - n0));
+        begin
+            automatic host_bfm_pkg::cmd_t c = host.log_q[$];
+            check(c.cmd == 16'h0180 && c.id == 3 && c.offset == 32'd23520 && c.addr == 32'h7400_9300 && c.len == 32'd37632,
+                  $sformatf("host saw cmd %04x id %0x offset %0d addr %08x len %0d", c.cmd, c.id, c.offset, c.addr, c.len));
+        end
+    endtask
+
     task automatic test_getfile_response_path();
         localparam string P = "/Assets/ngcd/common/Metal Slug 'X', 2/Metal Slug 'X' (Disc 1).cue";
         logic [2:0] err;
@@ -427,6 +453,23 @@ module tb_cd_host;
         ws_req <= 0;
     endtask
 
+    // The CD ring's bridge window, 0x7400_0000 plus the byte offset in the ring (cd_ring_wr.sv), is not the bank: writes
+    // there, at offsets that would be slot bases if the bank decoded fewer bits, leave every word of every slot as it was
+    task automatic test_ring_window_not_bank();
+        logic [31:0] q0 [6][WORDS], q1 [WORDS], q74 [WORDS];
+        test = "test_ring_window_not_bank";
+        for (int s = 0; s < 6; s++) read_slot(s, q0[s], q74);
+        host.bfm.write32(32'h7400_0000, 32'h1122_3344);
+        host.bfm.write32(32'h7400_2000, 32'h5566_7788);
+        host.bfm.write32(32'h7400_5924, 32'h99AA_BBCC);
+        host.bfm.write32(32'h7409_2FFC, 32'hDDEE_FF00);     // the ring's last word
+        repeat (20) @(posedge clk74);
+        for (int s = 0; s < 6; s++) begin
+            read_slot(s, q1, q74);
+            check(q1 === q0[s] && q74 === q0[s], $sformatf("bank slot %0d changed", s));
+        end
+    endtask
+
     task automatic run(input string name);
         tests++;
         case (name)
@@ -434,8 +477,10 @@ module tb_cd_host;
             "test_fetch_before_mount_read":         test_fetch_before_mount_read();
             "test_openfile_not_split":              test_openfile_not_split();
             "test_fetch_error_leaves_slot_invalid": test_fetch_error_leaves_slot_invalid();
+            "test_fetch_long_read":                 test_fetch_long_read();
             "test_getfile_response_path":           test_getfile_response_path();
             "test_wait_slot_write":                 test_wait_slot_write();
+            "test_ring_window_not_bank":            test_ring_window_not_bank();
             default: $fatal(1, "no test %s", name);
         endcase
         $display("%0s done, %0d failures so far", name, errors);
@@ -449,8 +494,10 @@ module tb_cd_host;
         run("test_fetch_before_mount_read");
         run("test_openfile_not_split");
         run("test_fetch_error_leaves_slot_invalid");
+        run("test_fetch_long_read");
         run("test_getfile_response_path");
         run("test_wait_slot_write");
+        run("test_ring_window_not_bank");
         if (errors != 0) $fatal(1, "%0d failures", errors);
         $display("cd_host: %0d tests passed", tests);
         $finish;

@@ -8,7 +8,7 @@
 """SD card package of the core: python tools/package.py neogeo|neogeo_debug|neogeocd|neogeocd_debug VERSION
 
 Writes dist/uniplexed.NeoMillie_VERSION.zip from synth/neogeo/output_files/neogeo.rbf and pocket/neogeo:
-the bit-reversed bitstream and JSON files, the Platform entry and its image (tools/make_platform_image.py), and the
+the bit-reversed bitstream and JSON files, the Platform entry (its image, tools/make_platform_image.py, for ngcd only), and the
 game list (tools/make_game_jsons.py) under the core's own folder in Assets. Millie's icon (tools/make_icon.py) goes in each core folder, the CD one for neogeocd*. The others are cores of their own, for tests; those built with the wait counter add the
 results slot of rtl/test/wait_counter.sv to data.json. neogeocd* are the Neo Geo CD core: its JSON files from
 pocket/neogeocd, the ngcd Platform entry and no game list. No ROM, BIOS or disc goes in, and the tool checks that.
@@ -39,6 +39,7 @@ WAIT_SLOT = {"name": "Wait counter", "id": "0x103", "required": False, "paramete
              "filename": "wait.sav", "extensions": ["sav"], "size_exact": None, "size_maximum": 256,
              "address": "0x80000000"}
 ALLOWED = {".json", ".bin", ".rbf_r", ".txt"}
+INTERACT_MAX = 11547     # bytes: the largest interact.json seen to load on a Pocket; 12,465 did not
 README_CD = """Neo Geo CD core for the Analogue Pocket, built from the MiSTer Neo Geo core.
 GPL-3.0-only as a whole: its drive files are ported from MiSTer's megacdd.cpp under that licence. The other sources
 are GPL-3.0-or-later or as their headers say. The core's JSON files follow those of Mazamars312's Neo Geo Overdrive.
@@ -46,7 +47,7 @@ are GPL-3.0-or-later or as their headers say. The core's JSON files follow those
 No BIOS, ROMs or discs are included. Put these in Assets/ngcd/common/ on the SD card:
   uni-bioscd.rom (the UniBIOS CD, 512 KB, the supported BIOS, loaded by name) and 000-lo.lo
   (top-sp1.bin and front-sp1.bin can be picked in the menu, untested at 2x; neocd.bin stops at its CDZ disc protection check)
-Each disc goes in its own folder there, as a .cue with one .bin in MODE1/2352. cd_convert.py, attached to the release, makes them from ISO, WAV or CHD.
+Each disc goes in its own folder there, as a .cue with one .bin in MODE1/2352. The NeoMillieCD Converter, attached to the release, makes them from CUE, ISO, WAV, compressed audio, CloneCD, Alcohol 120%, Nero, DiscJuggler or CHD.
 Pick the .cue on the Disc slot. CD/CDZ off reads the disc at 1x, on at 2x; changing it restarts the core.
 The memory card is Saves/ngcd/common/uni-bioscd.sav, written when you Quit the core.
 Known issues and tested titles: https://github.com/uniplexed/neomillie
@@ -86,10 +87,15 @@ def members(rev, version):
             j["data"]["data_slots"].append({**WAIT_SLOT, "size_maximum": 8192, "filename": "waitt.sav"})
             data = json.dumps(j, indent=4)
         if p.name == "interact.json" and platform == "ngcd" and not wait_counter:
-            # Debug items. Without the counter the speed follows CD/CDZ (rtl/top/neogeo_pocket.sv), and the lid stays closed
+            # The debug item. Without the counter the lid stays closed
             j = json.loads(data)
-            j["interact"]["variables"] = [v for v in j["interact"]["variables"] if v["name"] not in ("CD Speed", "Lid open (debug)")]
+            j["interact"]["variables"] = [v for v in j["interact"]["variables"] if v["name"] != "Lid open (debug)"]
             data = json.dumps(j, indent=4)
+        if p.name == "interact.json":
+            # The Pocket (firmware 2.7) stops with "Load error in interact: General error" on a file of 12,465 bytes, and loads the
+            # same menu at 4,061 and another at 11,547: the limit is not documented, so the file goes out with no white space
+            data = json.dumps(json.loads(data), separators=(",", ":"))
+            assert len(data) <= INTERACT_MAX, f"interact.json is {len(data)} bytes: the largest seen to load is {INTERACT_MAX}"
         yield f"Cores/{core}/{p.name}", data.encode()
     yield f"Cores/{core}/bitstream.rbf_r", bit_reverse((ROOT / f"synth/{rev}/output_files/{rev}.rbf").read_bytes())
     yield f"Cores/{core}/icon.bin", icon_bytes(platform == "ngcd")
@@ -97,11 +103,14 @@ def members(rev, version):
         yield "Platforms/ng.json", json.dumps(PLATFORM, indent=2).encode()
     else:
         yield f"Platforms/{platform}.json", (ROOT / "pocket" / json_dir / f"{platform}.json").read_bytes()
-    if platform == "ngcd":      # the ng image is shared by every Neo Geo core on the library, so this one ships none
+    # ng's banner is shared with every other core on that platform: shipping one replaces theirs, on the card and in the openFPGA library
+    if platform != "ng":
         yield f"Platforms/_images/{platform}.bin", image_bytes(platform)
     # Named per core: both zips unzip to the card's root, and the second would overwrite a shared name
     yield f"{AUTHOR}-{name}-README.txt", (README if platform == "ng" else README_CD).format(core=core).encode()
     yield f"{AUTHOR}-LICENSE.txt", (ROOT / "LICENSE").read_bytes()
+    # T80's licence asks for its notice in the materials that come with a synthesized core
+    yield f"{AUTHOR}-THIRD-PARTY-NOTICES.txt", (ROOT / "THIRD_PARTY_NOTICES.md").read_bytes()
     if platform == "ng":
         for game, data in json_files():
             yield f"Assets/ng/{core}/{game}", data
@@ -129,6 +138,7 @@ def main(argv):
         names = z.namelist()
     assert f"Cores/{AUTHOR}.{core_name}/bitstream.rbf_r" in names
     assert not [x for x in names if x.startswith("Assets/ng/common/")], "ROM folder in the package"
+    assert "Platforms/_images/ng.bin" not in names, "the ng banner is not ours to replace"
     if platform == "ngcd":
         assert not [x for x in names if x.startswith("Assets/")], "game list in the CD package"
     print(f"{out} {out.stat().st_size} bytes, {n} files")

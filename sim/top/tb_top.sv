@@ -604,6 +604,9 @@ module tb_top;
         check(dut.pll.relocks == 1, $sformatf("%0d relocks by setup done: the reset value of mvs must reconfigure once", dut.pll.relocks));
         host_cmd(16'h0010);
         bfm.write32(32'hF000_020C, 32'd4);      // 320 wide, as the menu restores it
+`ifdef TOP_CPU_CLOCK
+        bfm.write32(32'hF000_0110, `TOP_CPU_CLOCK);
+`endif
         load_all();
         host_cmd(16'h008F);
         host_cmd(16'h0090, 32'd0, 32'h2026_1101, 32'h0312_3456);
@@ -616,6 +619,7 @@ module tb_top;
         wait_mbox(16'h0006, 40.0);
         check(mbox_log.size() == 6, $sformatf("%0d progress writes, 6 expected", mbox_log.size()));
         check(dut.neogeo.Z80CPU.cpu.nmi_count == 1, "the Z80 did not take exactly one NMI");
+        check(vram_replaced == 0, $sformatf("%0d VRAM writes replaced one the LSPC still held", vram_replaced));
         $display("power up: %0d words of the program's progress at t=%0.1f ms", mbox_log.size(), $realtime / 1e6);
     endtask
 
@@ -745,7 +749,9 @@ module tb_top;
         check(w[0] == 32'h4E47_5754, $sformatf("%s: magic %08x", how, w[0]));
         check(w[1][31:24] == dut.neogeo.SDRAM_MUX.RD_WAIT, $sformatf("%s: RD_WAIT %0d", how, w[1][31:24]));
         check(w[2] == w[22] && w[2] != 0, $sformatf("%s: frames %0d and %0d", how, w[2], w[22]));
-        for (int i = 32; i < 64; i++) check(w[i] == (32'h5A00_0000 | i), $sformatf("%s: word %0d is %08x", how, i, w[i]));
+        for (int i = 57; i < 60; i++) check(w[i] == (32'h5A00_0000 | i), $sformatf("%s: word %0d is %08x", how, i, w[i]));
+        // The overclock words: the cart build, the 68K's clock setting, and bus cycles counted
+        check(w[48] == {dut.neogeo.cpu_clock, 1'b0, 29'd0} && w[52] != 0, $sformatf("%s: word 48 %08x, 52 %0d", how, w[48], w[52]));
         // The copy runs for 23 clocks after the tick, with a bus cycle maybe open
         check(file64(w, 4) >= total && file64(w, 4) - total <= 32, $sformatf("%s: total %0d, the bench had %0d", how, file64(w, 4), total));
         for (int c = 0; c < 4; c++) begin
@@ -784,7 +790,7 @@ module tb_top;
             ls[c] = bench_lost(c);
         end
         repeat (30) @(posedge clk48);
-        bfm.read_file(32'h8000_0000, 64, w);
+        bfm.read_file(32'h8000_0000 + 32'(dut.wait_ctr.run_no[2:0]) * 512, 64, w);    // the run's record of 8
         check_file(w, total, rd, ls, "file on exit");
         check(w[3] == dut.wait_ctr.worst, $sformatf("worst frame %0d in the file, %0d in the counter", w[3], dut.wait_ctr.worst));
         begin
@@ -798,7 +804,14 @@ module tb_top;
         dut.wait_ctr.timer = 29'h0FFF_FFF0;
         forever begin
             target_reg(8'h00, v);
-            if (v == 32'h636D_0184) break;
+            if (v == 32'h636D_0184) begin
+                target_reg(8'h20, v);
+                if (v == 32'h103) break;
+                // A save of the game's that Reset Core queued ahead of this one (apf_loader's rs_*): answered as the host does
+                bfm.write32(32'hF800_1000, 32'h6275_0000);
+                bfm.write32(32'hF800_1000, 32'h6F6B_0000);
+                saves++;        // the cart's save_done is every slot write's
+            end
             // Ready to run has waited for an answer since setup done, and the slot write waits behind it
             if (v == 32'h636D_0140) bfm.write32(32'hF800_1000, 32'h6F6B_0000);
         end
@@ -809,7 +822,7 @@ module tb_top;
         target_reg(8'h28, v);
         check(v == 32'h8000_0000, $sformatf("slot write from bridge address %x", v));
         target_reg(8'h2C, v);
-        check(v == 256, $sformatf("slot write of %0d bytes", v));
+        check(v == 8192, $sformatf("slot write of %0d bytes", v));    // 8 records and the second 4 KB
         bfm.write32(32'hF800_1000, 32'h6275_0000);
         @(posedge dut.core_vblank);
         total = clk68k;
@@ -818,7 +831,7 @@ module tb_top;
             ls[c] = bench_lost(c);
         end
         repeat (30) @(posedge clk48);
-        bfm.read_file(32'h8000_0000, 64, w);
+        bfm.read_file(32'h8000_0000 + 32'(dut.wait_ctr.run_no[2:0]) * 512, 64, w);    // the run's record of 8
         bfm.write32(32'hF800_1000, 32'h6F6B_0000);
         check_file(w, total, rd, ls, "slot write");
         repeat (8) @(posedge clk74);
@@ -869,6 +882,21 @@ module tb_top;
         check(ar[A_68K].n == 0, $sformatf("%0d 68K requests found an earlier 68K read still running", ar[A_68K].n));
     endtask
 
+    // The LSPC holds one VRAM write: a write to REG_VRAMRW while the last one is still waiting replaces it
+    int vram_writes = 0, vram_replaced = 0, vram_req_max = 0, vram_req_len = 0;
+    bit vram_wr_d = 0;
+    always @(posedge dut.neogeo.CLK_48M) begin
+        automatic bit wr = !dut.neogeo.LSPC.REGS_SYNC.WR_VRAM_RW;
+        automatic bit req = dut.neogeo.LSPC.REGS_SYNC.VRAM_WRITE_REQ;
+        vram_wr_d <= wr;
+        if (wr && !vram_wr_d) begin
+            vram_writes++;
+            if (req) vram_replaced++;
+        end
+        vram_req_len = req ? vram_req_len + 1 : 0;
+        if (vram_req_len > vram_req_max) vram_req_max = vram_req_len;
+    end
+
     function automatic void report();
         $display("68K bus, CLK_48M clocks unless stated. len: nAS low. ds: strobes low. dt: strobe fall to DTACK. latch: strobe fall to the last latch. stable: data unchanged before it. rdy: strobe to PROM_DATA_READY, CLK_96M");
         for (int k = 0; k < C_N; k++) if (st[k].n != 0) begin
@@ -878,6 +906,7 @@ module tb_top;
                      st[k].latch_min, st[k].latch_max, st[k].stable_min, st[k].rdy_min, st[k].rdy_max);
         end
         $display("  Z80: %0d opcodes, %0d NMIs. sim time %0.1f ms", dut.neogeo.Z80CPU.cpu.opcode_count, dut.neogeo.Z80CPU.cpu.nmi_count, $realtime / 1e6);
+        $display("  VRAM writes: %0d, %0d replaced one still waiting, longest wait %0d CLK_48M", vram_writes, vram_replaced, vram_req_max);
         wait_report();
     endfunction
 

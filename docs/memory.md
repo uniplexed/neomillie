@@ -91,7 +91,7 @@ A read, with E*n* the clock edge *n* clocks after CE# and ADV# fall:
 | E`RD_WAIT` | Data sampled, CE#, OE#, UB#, LB# high, ack |
 
 The next access can start 2 clocks after ack rises. Two accesses that change the direction of DQ also have `TURN` idle clocks between them.
-A write holds WE# for `WR_WAIT` clocks, 6 in the release: E0 to the end of the write is 7 clocks, 72.38 ns against the chip's 70 ns
+A write holds WE# for `WR_WAIT` clocks, 7 in the release: E0 to the end of the write is 8 clocks, 82.72 ns against the chip's 70 ns
 plus 2 ns of pad skew.
 
 ### The budget

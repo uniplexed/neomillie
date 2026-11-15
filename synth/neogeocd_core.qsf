@@ -19,4 +19,6 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/sram_port.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cd_host.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cd_mount.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cd_fetch.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cd_ring.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/cd/cd_ring_wr.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/pocket/bios_model.sv

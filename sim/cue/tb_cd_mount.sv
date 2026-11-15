@@ -25,6 +25,8 @@
 //                                      22 reads, under a second at the real host latency; disc_bin_size unused
 // test_converted_disc                  tools/cd_convert.py's output
 // test_repick_during_mount             cd_mount_req on the clock a command goes out: the new disc, no hang
+// With +define+NEOGEO_WAIT_COUNTER this bench runs only:
+// test_openfile_times                  8 opens of the BIN, the CUE's between them, the BIN last, and their times
 `include "cd_defs.svh"
 `timescale 1ns/1ps
 module tb_cd_mount;
@@ -95,7 +97,7 @@ module tb_cd_mount;
         .target_buffer_param_struct(param_struct), .target_buffer_resp_struct(resp_struct),
         .bridge_addr, .bridge_wr, .bridge_wr_data, .bridge_rd, .bridge_rd_data(host_rd_data),
         .mr_req, .mr_kind, .mr_slot, .mr_offset, .mr_len, .mr_bank_slot, .mr_done, .mr_err,
-        .fr_req(1'b0), .fr_slot(16'd0), .fr_offset(32'd0), .fr_bank_slot(2'd0), .fr_done(), .fr_err(),
+        .fr_req(1'b0), .fr_slot(16'd0), .fr_offset(32'd0), .fr_bridge(32'd0), .fr_len(32'd0), .fr_done(), .fr_err(),
         .bank_rd_addr(12'd0), .bank_rd_q(), .bank_rd_addr_74, .bank_rd_q_74,
         .path_addr, .path_wr, .path_wdata, .path_q
     );
@@ -105,7 +107,7 @@ module tb_cd_mount;
     logic  [6:0] toc_rd_track = 0;
     wire         disc_loading, disc_present;
     wire   [6:0] track_count;
-    wire  [23:0] disc_end;
+    wire  [23:0] disc_end, bin_sectors;
     toc_entry_t  toc_rd_entry;
 
     cd_mount dut (
@@ -114,7 +116,7 @@ module tb_cd_mount;
         .mr_req, .mr_kind, .mr_slot, .mr_offset, .mr_len, .mr_bank_slot, .mr_done, .mr_err,
         .path_addr, .path_wr, .path_wdata, .path_q,
         .bank_rd_addr_74, .bank_rd_q_74,
-        .disc_loading, .disc_present, .track_count, .disc_end,
+        .disc_loading, .disc_present, .track_count, .disc_end, .bin_sectors,
         .CLK_48M(clk48), .toc_rd_track, .toc_rd_entry
     );
 
@@ -219,6 +221,12 @@ module tb_cd_mount;
         return n;
     endfunction
 
+    // The data file's whole sectors, the BIN's for a CUE, before any PREGAP: what cd_ring takes as the file's size
+    function automatic void check_bin_sectors(input string bin);
+        longint want = size_of(bin) / 2352;
+        check(bin_sectors == 24'(want), $sformatf("bin_sectors %0d, %0s has %0d", bin_sectors, bin, want));
+    endfunction
+
     // ---- Tests ----
     task automatic case_cue(input string name, input string card, input string bin, input string golden);
         int first;
@@ -227,6 +235,7 @@ module tb_cd_mount;
         mount(card, 100.0, first, took);
         compare_golden(golden);
         check_openfile(first, card, bin);
+        check_bin_sectors({dir_of(card), bin});
     endtask
 
     // reason: why cd_mount says there is no disc (its reason_t), so that a no disc for another cause fails
@@ -236,6 +245,7 @@ module tb_cd_mount;
         test = name;
         mount(card, 100.0, first, took);
         compare_golden("nodisc.toc");
+        check(bin_sectors == 0, $sformatf("bin_sectors %0d with no disc", bin_sectors));
         check(int'(dut.reason) == reason, $sformatf("no disc for reason %0d, expected %0d", dut.reason, reason));
     endtask
 
@@ -245,6 +255,7 @@ module tb_cd_mount;
         test = "test_raw_bin_single_track";
         mount({COMMON, "raw/disc.bin"}, 100.0, first, took);
         compare_golden("raw.toc");
+        check_bin_sectors({COMMON, "raw/disc.bin"});
         check(count_cmds(first, 16'h0192) == 0 && count_cmds(first, 16'h0190) == 0, "a raw BIN asked for getfile or openfile");
     endtask
 
@@ -278,6 +289,7 @@ module tb_cd_mount;
         mount({COMMON, "probe/disc.cue"}, 1000.0, first, took);
         host.latency_clks = 2000;
         compare_golden("probe.toc");
+        check_bin_sectors({COMMON, "probe/disc.bin"});
         reads = 0;
         for (int i = first; i < host.log_q.size(); i++)
             if (host.log_q[i].cmd == 16'h0180 && host.log_q[i].id == 3) reads++;
@@ -309,6 +321,30 @@ module tb_cd_mount;
         compare_golden("pregap.toc");
     endtask
 
+`ifdef NEOGEO_WAIT_COUNTER
+    task automatic test_openfile_times();
+        string cue = {COMMON, "probe/disc.cue"}, bin = {COMMON, "probe/disc.bin"};
+        int first, n = 0;
+        realtime took;
+        test = "test_openfile_times";
+        host.known.push_back(cue);
+        host.latency_clks = 74250;
+        mount(cue, 1000.0, first, took);
+        host.latency_clks = 2000;
+        check(disc_present, "no disc");
+        for (int i = first; i < host.log_q.size(); i++)
+            if (host.log_q[i].cmd == 16'h0192) begin
+                check(host.log_q[i].path == (n % 2 == 0 ? bin : cue), $sformatf("open %0d of \"%0s\"", n, host.log_q[i].path));
+                check(host.log_q[i].err == 0, $sformatf("open %0d answered err %0d", n, host.log_q[i].err));
+                n++;
+            end
+        check(n == 15, $sformatf("%0d openfiles", n));
+        for (int i = 0; i < 23; i++)
+            check(dut.dbg_open[i] >= 16'd18 && dut.dbg_open[i] < 16'd200, $sformatf("time %0d is %0d", i, dut.dbg_open[i]));
+        check(dut.dbg_open[23] == 0, "the last round opened the CUE");
+    endtask
+`endif
+
     task automatic run(input string name);
         tests++;
         case (name)
@@ -325,6 +361,9 @@ module tb_cd_mount;
             "test_disc_end_from_size_probe":        test_disc_end_from_size_probe();
             "test_converted_disc":                  case_cue(name, {COMMON, "conv/conv/conv.cue"}, "conv.bin", "converted.toc");
             "test_repick_during_mount":             test_repick_during_mount();
+`ifdef NEOGEO_WAIT_COUNTER
+            "test_openfile_times":                  test_openfile_times();
+`endif
             default: $fatal(1, "no test %s", name);
         endcase
         $display("%0s done, %0d failures so far", name, errors);
@@ -338,6 +377,9 @@ module tb_cd_mount;
             {COMMON, "conv/conv/conv.bin"}};
         fork host.serve_forever(files); join_none
         repeat (100) @(posedge clk74);
+`ifdef NEOGEO_WAIT_COUNTER
+        run("test_openfile_times");
+`else
         run("test_raw_bin_single_track");
         run("test_cue_single_bin");
         run("test_cue_crlf_and_quoted_spaces");
@@ -351,6 +393,7 @@ module tb_cd_mount;
         run("test_disc_end_from_size_probe");
         run("test_converted_disc");
         run("test_repick_during_mount");
+`endif
         if (errors != 0) $fatal(1, "%0d failures", errors);
         $display("cue: %0d tests passed", tests);
         $finish;

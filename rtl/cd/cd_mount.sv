@@ -36,12 +36,19 @@
 //    a binary search of 2,352-byte reads of slot 3 for the last readable sector, 20 reads, up to 2^20 - 1
 //    sectors (2.4 GB, so that offsets stay in 32 bits). A partial last sector is not counted. disc_bin_size
 //    is not used: apf_loader captures it at every table sweep that shows slot 3, and the RTL cannot tell a
-//    fresh size from a stale one. It is kept for the debug dump of Task 12.
+//    fresh size from a stale one. It is kept for the debug dump of Task 12. bin_sectors is that count, before PREGAP, or a raw
+//    BIN's disc_size / 2352: the data file's size for cd_ring, set with disc_present and 0 without a disc.
 //
 // The TOC RAM: 128 entries of toc_entry_t, written here at clk_74a while disc_loading holds cdd_drive at
 // TRAY, read at CLK_48M with one clock of latency. A sector of a PREGAP gap belongs to the track before and
 // reads on in the BIN, so into the next track's start, as MiSTer does with one BIN: heard if an audio track has a PREGAP.
 // rst must not rise with a cd_host command in flight unless cd_host is reset too.
+//
+// The wait counter's build times what a change of file would cost, for a CUE, before the probe, whose reads overwrite the CUE
+// in the bank. 8 rounds: the BIN's openfile of step 5; a read of 2,352 bytes of it at 64 KB * round to bank slot 3, if a CUE of
+// at most 3 x 2,352 bytes leaves that slot free; then, but for the last round, a getfile and an openfile of the CUE itself in
+// slot 3. The BIN is what stays open. dbg_open has {BIN open, read, CUE open} per round in units of 4,096 clk_74a, 55 us: FFFF
+// for a command answered with an error, FFFE for 3.6 s or more, 0 for one not run.
 `include "cd_defs.svh"
 
 module cd_mount import cd_defs::*; #(
@@ -73,10 +80,14 @@ module cd_mount import cd_defs::*; #(
     output reg        disc_present = 0,
     output reg  [6:0] track_count = 0,
     output reg [23:0] disc_end = 0,
+    output reg [23:0] bin_sectors = 0,      // whole 2,352-byte sectors of the data file
     // TOC RAM
     input             CLK_48M,
     input       [6:0] toc_rd_track,
     output toc_entry_t toc_rd_entry,
+`ifdef NEOGEO_WAIT_COUNTER
+    output reg [0:23][15:0] dbg_open = 0,   // the times above
+`endif
     output      [3:0] dbg_reason            // why the last mount ended, reason_t below: the wait counter's file
 );
 
@@ -88,6 +99,9 @@ typedef enum logic [4:0] {
     M_IDLE, M_SWEEP, M_FIRST, M_BYTE_WAIT, M_SNIFF, M_RAW_DIV, M_PIECE, M_PARSE_RD, M_PARSE_CH,
     M_ACT1, M_ACT2, M_PARSE_END, M_GETFILE, M_SCAN, M_BUILD, M_BUILD_WR, M_OPEN, M_PROBE, M_PROBE_RD,
     M_PROBE_RES, M_FINISH, M_FAIL, M_ISSUE, M_CMD
+`ifdef NEOGEO_WAIT_COUNTER
+    , M_T_READ, M_T_READ_RES, M_T_NEXT, M_T_COPY0, M_T_COPY, M_T_COPY_WR, M_T_CUE
+`endif
 } mstate_t;
 
 typedef enum logic [3:0] {
@@ -109,6 +123,14 @@ reason_t   reason = R_NONE;
 assign dbg_reason = reason;
 
 reg        again = 0;               // a mount request not yet started
+`ifdef NEOGEO_WAIT_COUNTER
+reg  [3:0] t_n = 0;                 // the round
+reg [27:0] t_op = 0;                // clocks of the last command
+wire [4:0] t_i = 5'(t_n) * 5'd3;
+function automatic [15:0] t16(input [27:0] t);
+    return t[27:12] >= 16'hFFFE ? 16'hFFFE : t[27:12];
+endfunction
+`endif
 reg [31:0] size = 0;
 reg [13:0] i = 0;                   // byte of the CUE, of the response, of the probe count
 reg        eof = 0;
@@ -138,7 +160,7 @@ reg        p_valid = 0, p_audio = 0, p_stop_set = 0;
 reg [23:0] p_start = 0, p_stop = 0, p_file_lba = 0;
 
 // Path
-reg  [8:0] plen = 0, prefix = 0;
+reg  [8:0] prefix = 0;
 reg  [6:0] w = 0;                   // parameter struct word
 reg  [1:0] k = 0;                   // byte in the word
 reg [31:0] wacc = 0;
@@ -573,7 +595,6 @@ always @(posedge clk_74a) begin
         // Find the NUL and the last '/' of the response
         M_SCAN:
             if (resp_byte == 0) begin
-                plen  <= 9'(i);
                 state <= M_BUILD;
                 w     <= 0;
                 k     <= 0;
@@ -636,9 +657,79 @@ always @(posedge clk_74a) begin
             else begin
                 lo    <= 0;
                 hi    <= {1'b1, {PROBE_BITS{1'b0}}};
+`ifdef NEOGEO_WAIT_COUNTER
+                dbg_open[t_i] <= t16(t_op);
+                state <= M_T_READ;
+`else
                 state <= M_PROBE;
+`endif
             end
 
+`ifdef NEOGEO_WAIT_COUNTER
+        // ---- The openfile test, see the top of this file ----
+        M_T_READ:
+            if (disc_size > 32'(3 * SECTOR)) state <= M_T_NEXT;
+            else begin
+                mr_kind      <= K_READ;
+                mr_slot      <= 16'd3;
+                mr_offset    <= 32'(t_n) << 16;
+                mr_len       <= SECTOR;
+                mr_bank_slot <= 2'd3;
+                ret          <= M_T_READ_RES;
+                state        <= M_ISSUE;
+            end
+
+        M_T_READ_RES: begin
+            dbg_open[t_i + 1'd1] <= cmd_err != 0 ? 16'hFFFF : t16(t_op);
+            state                <= M_T_NEXT;
+        end
+
+        M_T_NEXT:
+            if (t_n == 4'd7) state <= M_PROBE;
+            else begin
+                mr_kind <= K_GETFILE;
+                mr_slot <= 16'd2;
+                ret     <= M_T_COPY0;
+                state   <= M_ISSUE;
+            end
+
+        M_T_COPY0: begin
+            w     <= 0;
+            state <= M_T_COPY;
+        end
+
+        // The response's path into the parameter struct, flags and size 0: the CUE's own path
+        M_T_COPY: begin
+            path_addr  <= {1'b1, w};
+            after_byte <= M_T_COPY_WR;
+            state      <= M_BYTE_WAIT;
+        end
+
+        M_T_COPY_WR: begin
+            path_addr  <= {1'b0, w};
+            path_wdata <= w < 7'd64 ? path_q : 32'd0;
+            path_wr    <= 1;
+            w          <= w + 1'd1;
+            state      <= M_T_COPY;
+            if (w == 7'd65) begin
+                mr_kind <= K_OPENFILE;
+                mr_slot <= 16'd3;
+                ret     <= M_T_CUE;
+                state   <= M_ISSUE;
+            end
+        end
+
+        // The BIN again, through M_GETFILE and M_OPEN: a failure there is a failed mount, as for the first
+        M_T_CUE: begin
+            dbg_open[t_i + 2'd2] <= cmd_err != 0 ? 16'hFFFF : t16(t_op);
+            t_n     <= t_n + 1'd1;
+            mr_kind <= K_GETFILE;
+            mr_slot <= 16'd2;
+            ret     <= M_GETFILE;
+            state   <= M_ISSUE;
+        end
+
+`endif
         // ---- The BIN's sectors: lo readable for sure, hi not ----
         M_PROBE:
             if (hi - lo <= 1) begin
@@ -681,6 +772,7 @@ always @(posedge clk_74a) begin
                 toc_wd       <= {1'b0, 7'd0, 24'd0, quot[23:0], 24'd0};
                 track_count  <= 1;
                 disc_end     <= quot[23:0];
+                bin_sectors  <= quot[23:0];
                 disc_present <= raw_ok;
                 disc_loading <= 0;
                 if (!raw_ok) begin
@@ -693,6 +785,7 @@ always @(posedge clk_74a) begin
                 toc_wd       <= {p_audio, 7'd1, p_start, last_stop, p_file_lba};
                 track_count  <= ntracks;
                 disc_end     <= last_stop;
+                bin_sectors  <= 24'(lo);
                 disc_present <= 1;
                 disc_loading <= 0;
             end
@@ -703,6 +796,7 @@ always @(posedge clk_74a) begin
             disc_loading <= 0;
             track_count  <= 0;
             disc_end     <= 0;
+            bin_sectors  <= 0;
             state        <= M_IDLE;
         end
 
@@ -711,6 +805,9 @@ always @(posedge clk_74a) begin
             if (!mr_done) begin
                 mr_req <= 1;
                 state  <= M_CMD;
+`ifdef NEOGEO_WAIT_COUNTER
+                t_op   <= 0;
+`endif
             end
 
         M_CMD:
@@ -723,6 +820,9 @@ always @(posedge clk_74a) begin
         default: state <= M_IDLE;
     endcase
 
+`ifdef NEOGEO_WAIT_COUNTER
+    if (state == M_CMD && !(&t_op)) t_op <= t_op + 1'd1;
+`endif
     // A new request: drop the disc now, start once no command is in flight
     if (mount_req) begin
         again        <= 1;
@@ -739,6 +839,10 @@ always @(posedge clk_74a) begin
         reason       <= R_NONE;
         wait_cnt     <= 16'(SWEEP_CLKS);
         state        <= M_SWEEP;
+`ifdef NEOGEO_WAIT_COUNTER
+        t_n          <= 0;
+        dbg_open     <= 0;
+`endif
     end
 
     if (rst) begin
@@ -749,6 +853,7 @@ always @(posedge clk_74a) begin
         disc_loading <= 0;
         track_count  <= 0;
         disc_end     <= 0;
+        bin_sectors  <= 0;
     end
 end
 

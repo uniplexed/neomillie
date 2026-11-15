@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 594" width="560" role="img">
+<title>NeoMillie: Core Settings</title>
+<desc>The items of the core's menu in the order the Pocket lists them, each with its default value and the number the manual uses for it.</desc>
+<style>
+svg{font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+.bg{fill:#141416}.h{font-size:17px;font-weight:700;fill:#f4f4f4}.r{stroke:#3a3a40}
+.g{font-size:11px;font-weight:700;letter-spacing:.09em;fill:#8f9097}
+.i{font-size:15px;fill:#ececec}.v{font-size:15px;fill:#a4a5ab}
+.n{fill:#2c2d33}.nt{font-size:11.5px;font-weight:700;fill:#e3e3e3}
+</style>
+<rect class="bg" width="560" height="594" rx="14"/>
+<text class="h" x="22" y="38">NeoMillie: Core Settings</text>
+<line class="r" x1="22" y1="52" x2="538" y2="52"/>
+<text class="g" x="56" y="79">SYSTEM</text>
+<circle class="n" cx="33" cy="99" r="10"/><text class="nt" x="33" y="103" text-anchor="middle">1</text><text class="i" x="56" y="104">Reset Core</text><text class="v" x="538" y="104" text-anchor="end"></text>
+<circle class="n" cx="33" cy="125" r="10"/><text class="nt" x="33" y="129" text-anchor="middle">2</text><text class="i" x="56" y="130">AES/MVS</text><text class="v" x="538" y="130" text-anchor="end">On</text>
+<circle class="n" cx="33" cy="151" r="10"/><text class="nt" x="33" y="155" text-anchor="middle">3</text><text class="i" x="56" y="156">Region (Reset to apply)</text><text class="v" x="538" y="156" text-anchor="end">From the BIOS</text>
+<circle class="n" cx="33" cy="177" r="10"/><text class="nt" x="33" y="181" text-anchor="middle">4</text><text class="i" x="56" y="182">MVS DIP</text><text class="v" x="538" y="182" text-anchor="end">Off</text>
+<circle class="n" cx="33" cy="203" r="10"/><text class="nt" x="33" y="207" text-anchor="middle">5</text><text class="i" x="56" y="208">Memory Card Unplugged</text><text class="v" x="538" y="208" text-anchor="end">Off</text>
+<circle class="n" cx="33" cy="229" r="10"/><text class="nt" x="33" y="233" text-anchor="middle">6</text><text class="i" x="56" y="234">68K Clock</text><text class="v" x="538" y="234" text-anchor="end">12 MHz (original)</text>
+<text class="g" x="56" y="269">VIDEO</text>
+<circle class="n" cx="33" cy="289" r="10"/><text class="nt" x="33" y="293" text-anchor="middle">7</text><text class="i" x="56" y="294">PAL Output</text><text class="v" x="538" y="294" text-anchor="end">Off</text>
+<circle class="n" cx="33" cy="315" r="10"/><text class="nt" x="33" y="319" text-anchor="middle">8</text><text class="i" x="56" y="320">320/304 H Video Output</text><text class="v" x="538" y="320" text-anchor="end">Off</text>
+<circle class="n" cx="33" cy="341" r="10"/><text class="nt" x="33" y="345" text-anchor="middle">9</text><text class="i" x="56" y="346">Video Scaler output</text><text class="v" x="538" y="346" text-anchor="end">Aspect ratio 19:15</text>
+<circle class="n" cx="33" cy="367" r="10"/><text class="nt" x="33" y="371" text-anchor="middle">10</text><text class="i" x="56" y="372">Screen X Position</text><text class="v" x="538" y="372" text-anchor="end">0</text>
+<circle class="n" cx="33" cy="393" r="10"/><text class="nt" x="33" y="397" text-anchor="middle">11</text><text class="i" x="56" y="398">Screen Y Position</text><text class="v" x="538" y="398" text-anchor="end">0</text>
+<text class="g" x="56" y="433">AUDIO</text>
+<circle class="n" cx="33" cy="453" r="10"/><text class="nt" x="33" y="457" text-anchor="middle">12</text><text class="i" x="56" y="458">Stereo Mix</text><text class="v" x="538" y="458" text-anchor="end">None</text>
+<circle class="n" cx="33" cy="479" r="10"/><text class="nt" x="33" y="483" text-anchor="middle">13</text><text class="i" x="56" y="484">Mute</text><text class="v" x="538" y="484" text-anchor="end">None</text>
+<circle class="n" cx="33" cy="505" r="10"/><text class="nt" x="33" y="509" text-anchor="middle">14</text><text class="i" x="56" y="510">ADPCM-A Channel</text><text class="v" x="538" y="510" text-anchor="end">None</text>
+<text class="g" x="56" y="545">CONTROLS</text>
+<circle class="n" cx="33" cy="565" r="10"/><text class="nt" x="33" y="569" text-anchor="middle">15</text><text class="i" x="56" y="570">L/R Buttons</text><text class="v" x="538" y="570" text-anchor="end">A+B / C+D</text>
+</svg>

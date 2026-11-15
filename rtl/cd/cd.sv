@@ -104,7 +104,7 @@ module cd_sys(
 	input DMA_SDRAM_BUSY,
 
 	output [36:0] DBG_SECT,	// POCKET: {sector DMA'd, skipped, lost toggles; a late STAT3 read toggle; the lost one's {interrupt dropped, header}}, wait counter only
-	output [2:0] DBG_HOLD	// POCKET: {toggles when a hold ends at MASK_HOLD_MAX, a sector is held, the decoder on with its interrupt masked}, for the wait counter only
+	output [2:0] DBG_HOLD	// POCKET: {a hold ran out, toggle; a sector is held; the decoder on with its interrupt masked}, for the wait counter only. The first two only with Turbo 4x
 );
 	parameter MCLK = 96671316;
 
@@ -189,7 +189,32 @@ module cd_sys(
 	reg SECTOR_READY; // For decoder interrupt
 	reg SECTOR_FILLED[2];
 	reg [23:0] SECTOR_TIME_CNT;
-	assign DBG_HOLD = {2'b00, LC8951_DECEN & ~(REG_FF0002[10] & REG_FF0002[8])};	// POCKET
+	// POCKET: Turbo 4x (CD_SPEED 3) is no real drive, so it paces sectors to the program, with the decoder on. At 1x and
+	// 2x nothing waits, as on a console.
+	// - Interrupt masked (FF0002 bits 10 and 8): the sector waits, 50 ms at most, as a program may poll IFSTAT. The BIOS's
+	//   directory scan masks it 9 ms a sector, and each sector that went by cost it a seek.
+	// - Just unmasked: it waits until the 68K reads $10F688, or 3.3 ms. The BIOSes and Samurai Shodown RPG's loader
+	//   unmask, then read their count of sectors left there ($7688(a5), a5 = $108000) and wait for it to change; a sector
+	//   between the two would make them wait for one more, and the next would replace the first in their buffer.
+	// - Open since the last sector: it is due a 2x sector time after that one (SECTOR_DUE). Such a program counts on the
+	//   drive's pace: Samurai Shodown RPG parses its directory in the BIOS's buffer that way, 2.7 ms a sector at 24 MHz.
+	localparam [23:0] MASK_HOLD_MAX = MCLK / 20;	// 50 ms
+	localparam [17:0] UNMASK_WAIT = MCLK / 300;	// 3.3 ms
+	reg [23:0] MASK_HOLD_CNT;
+	reg [17:0] UNMASK_CNT = 0;			// clocks since the interrupt opened, up to UNMASK_WAIT
+	reg COUNT_READ = 0;				// the 68K read $10F688 since the interrupt opened
+	reg MASK_SEEN = 0;				// the interrupt was masked since the last sector took the decoder
+	reg DBG_FLIP = 0;				// a sector took the decoder in the last clock; also for the wait counter
+	reg DBG_HOLD_TOG = 0;
+	wire IRQ_OPEN = REG_FF0002[10] & REG_FF0002[8];
+	wire MASK_HELD = (CD_SPEED == 2'd3) & LC8951_DECEN & (~IRQ_OPEN | (~COUNT_READ & (UNMASK_CNT < UNMASK_WAIT)));
+	wire [20:0] SECTOR_DUE = (CD_SPEED == 2'd3) & LC8951_DECEN & ~MASK_SEEN ? SECTOR_TIME_2X[20:0] : SECTOR_TIME;
+	always @(posedge clk_sys) begin
+		UNMASK_CNT <= ~IRQ_OPEN ? 18'd0 : UNMASK_CNT + (UNMASK_CNT < UNMASK_WAIT);
+		COUNT_READ <= IRQ_OPEN & (COUNT_READ | (~nAS & M68K_RW & (M68K_ADDR == 23'h087B44)));	// $10F688
+		MASK_SEEN <= ~DBG_FLIP & (MASK_SEEN | ~IRQ_OPEN);
+	end
+	assign DBG_HOLD = {DBG_HOLD_TOG, MASK_HOLD_CNT != 0, LC8951_DECEN & ~(REG_FF0002[10] & REG_FF0002[8])};
 
 	reg FORCE_WR;
 	reg [2:0] LOADING_STATE;
@@ -246,7 +271,6 @@ module cd_sys(
 	// was DMA'd from the cache, or skipped (STAT3 read, no DMA: the program looked and passed), or lost (neither: the program
 	// never took it, and the next one replaced it). Real hardware keeps several sectors in its buffer; this cache keeps one.
 	// For a lost one: whether the decoder's interrupt reached CD_IRQ_FLAGS, or fell while FF0002 had it off and was dropped.
-	reg        DBG_FLIP = 0;
 	reg [31:0] DBG_OUT_HEAD = 0;
 	reg        DBG_PRES = 0, DBG_ACK = 0, DBG_TAKEN = 0, DBG_IRQ = 0, DBG_DROP = 0, DBG_STAT3_D = 0;
 	reg        DBG_TAKEN_TOG = 0, DBG_SKIP_TOG = 0, DBG_LOST_TOG = 0;
@@ -291,6 +315,7 @@ module cd_sys(
 			SECTOR_FILLED[0] <= 0;
 			SECTOR_FILLED[1] <= 0;
 			SECTOR_TIME_CNT <= 0;
+			MASK_HOLD_CNT <= 0;
 			SECTOR_TIME <= SECTOR_TIME_1X[20:0];
 
 			LOADING_STATE <= 3'd0;	// Idle, waiting for request
@@ -315,7 +340,7 @@ module cd_sys(
 				SECTOR_READY <= 0;
 			end
 
-			if (SECTOR_TIME_CNT < SECTOR_TIME) begin
+			if (SECTOR_TIME_CNT < SECTOR_DUE) begin
 				SECTOR_TIME_CNT <= SECTOR_TIME_CNT + 1'b1;
 			end else begin
 				// POCKET: no flip while a DMA runs. MiSTer flips the read bank as soon as SECTOR_TIME has passed
@@ -326,14 +351,22 @@ module cd_sys(
 				// next flip is still at least SECTOR_TIME after this one, and the supply waits on CD_DATA_WR_READY
 				// as before. A flip between the STAT3 read and the DMA's start is not held: a program that takes a
 				// sector and never DMAs it must not stall the stream.
+				// With Turbo 4x, nor while MASK_HELD: the drive waits on CD_DATA_WR_READY, and the sector flips in at the
+				// unmask or after MASK_HOLD_MAX.
 				if (SECTOR_FILLED[~CACHE_RD_BANK] & ~DMA_RUNNING) begin
-					DBG_FLIP <= 1;					// POCKET
-					DBG_OUT_HEAD <= HEADER_DIN;		// POCKET: the header of the sector leaving
-					SECTOR_FILLED[CACHE_RD_BANK] <= 0;
-					SECTOR_READY <= 1;
-					CACHE_RD_BANK <= ~CACHE_RD_BANK;
-					SECTOR_TIME_CNT <= 0;
-					SECTOR_TIME <= SECTOR_TIME_SEL;
+					if (MASK_HELD & (MASK_HOLD_CNT < MASK_HOLD_MAX)) begin
+						MASK_HOLD_CNT <= MASK_HOLD_CNT + 1'b1;
+					end else begin
+						if (MASK_HELD) DBG_HOLD_TOG <= ~DBG_HOLD_TOG;	// the hold ran out
+						MASK_HOLD_CNT <= 0;
+						DBG_FLIP <= 1;					// POCKET
+						DBG_OUT_HEAD <= HEADER_DIN;		// POCKET: the header of the sector leaving
+						SECTOR_FILLED[CACHE_RD_BANK] <= 0;
+						SECTOR_READY <= 1;
+						CACHE_RD_BANK <= ~CACHE_RD_BANK;
+						SECTOR_TIME_CNT <= 0;
+						SECTOR_TIME <= SECTOR_TIME_SEL;
+					end
 				end
 			end
 

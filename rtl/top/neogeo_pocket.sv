@@ -81,7 +81,8 @@ module neogeo_pocket
 	output        fr_req,
 	output [15:0] fr_slot,
 	output [31:0] fr_offset,
-	output  [1:0] fr_bank_slot,
+	output [31:0] fr_bridge,
+	output [31:0] fr_len,
 	input         fr_done,
 	input         fr_err,
 	output [11:0] bank_rd_addr,
@@ -90,8 +91,14 @@ module neogeo_pocket
 	input         disc_loading,
 	input   [6:0] track_count,
 	input  [23:0] disc_end,
+	input  [23:0] bin_sectors,      // the data file's whole sectors, for cd_ring
 	output  [6:0] toc_rd_track,
 	input  [79:0] toc_rd_entry,     // cd_defs::toc_entry_t
+	// POCKET: cd_ring_wr's SDRAM word writes into the CD ring, CLK_96M
+	input         rw_valid,
+	input  [24:0] rw_word,
+	input  [15:0] rw_data,
+	output        rw_take,
 `endif
 
 	output [15:0] snd_left,
@@ -110,6 +117,8 @@ module neogeo_pocket
 	output        dl_overflow,
 `ifdef NEOGEO_WAIT_COUNTER
 	output  [4:0] dbg_wait,		// wait_counter.sv: {CRAM0 at the 68K's request, ROM zone, nAS, nRESET}
+	output [25:0] dbg_ovc,		// wait_counter.sv, both builds: {cpu_clock, M68K_RW, M68K_ADDR[23:1]}
+	output  [2:0] dbg_voff,		// wait_counter.sv, both builds: the CD's video, FIX and SPR off; 0 on a cartridge
 `ifdef NEOGEO_CD
 	output [113:0] dbg_cdd,		// wait_counter.sv, layout 3: the CD side, see the assign below
 	output  [53:0] dbg_cd2,		// wait_counter.sv, layout 3: settings, 68K, DMA, hold, see the assign below
@@ -119,6 +128,7 @@ module neogeo_pocket
 	output  [25:0] dbg_dreq,	// wait_counter.sv, layout 3: the drive's request of a sector: {toggle, audio, LBA}
 	output [319:0] dbg_fetch,	// cd_fetch.sv's counts
 	output [383:0] dbg_dma,		// pocket_mem_mux.sv's counts
+	output [127:0] dbg_ringc,	// cd_ring.sv's counters, wait_counter.sv words 122-125
 `endif
 `endif
 
@@ -264,7 +274,6 @@ wire SYSTEM_CDZ = SYSTEM_CDx & SYSTEM_CD_TYPE;
 reg [7:0] ioctl_index;
 always @(posedge clk_sys) ioctl_index <= ioctl_idx;
 
-wire dbg_menu = 0;     // POCKET: no keyboard
 
 //////////////////   Her Majesty   ///////////////////
 
@@ -274,7 +283,7 @@ wire nRESET, nRESETP, nSYSTEM, CARD_WE, SHADOW, nVEC, nREGEN, nSRAMWEN, PALBNK;
 wire CD_nRESET_Z80;
 
 // Clocks
-wire CLK_EN_12M, CLK_EN_12M_N, CLK_68KCLK, CLK_68KCLKB, CLK_EN_6MB, CLK_EN_1HB, CLK_EN_4M_P, CLK_EN_4M_N, CLK_EN_68K_P, CLK_EN_68K_N;
+wire CLK_EN_12M, CLK_EN_12M_N, CLK_68KCLK, CLK_68KCLKB, CLK_EN_6MB, CLK_EN_1HB, CLK_EN_4M_P, CLK_EN_4M_N, CLK_EN_68K_P, CLK_EN_68K_N, CLK_EN_68K_P_12, CLK_EN_68K_N_12;
 
 // 68k stuff
 wire [15:0] M68K_DATA;
@@ -447,7 +456,7 @@ wire [15:0] DMA_DATA_IN = (CD_TR_RD_PCM & ~CD_EXT_RD) ? { 8'h00, ADPCMA_DOUT } :
 wire DMA_SDRAM_BUSY;
 wire PROM_DATA_READY;
 wire CD_EXT_WR_READY;
-wire CD_PCM_DTACK;
+wire CD_FIX_DTACK;
 
 wire [15:0] CD_AUDIO_L, CD_AUDIO_R;
 
@@ -475,12 +484,21 @@ wire [23:0] dbg_cur_lba;        // POCKET: read by the wait counter's CD file on
 wire  [3:0] dbg_cur_status;
 wire CDD_COMMAND_SEND;
 wire CDD_STATUS_LATCH;
+// POCKET: Turbo 4x, status[12], picks cd_ring for the drive's sectors in place of cd_fetch, and reads data at 4x. A change
+// restarts the core (apf_loader), and the pick is taken only in reset, so it never changes under a request. It also waits
+// for cd_host's fetch client to be idle: in reset neither source starts a read, so the new one never meets the old one's.
+// A read still in flight when the reset ends keeps the old pick until the next reset. The XOR of the two sources' toggles
+// (fr_done, req_valid) is sound only with at most one host read outstanding, which fr_done == fr_req guarantees; a read
+// spanning the whole reset therefore defers the switch to the next reset
+reg turbo = 0;
 `ifdef NEOGEO_WAIT_COUNTER
-wire [1:0] cd_speed = status[30:29];
-`else
-// POCKET: a release has no CD Speed item: 1x with CD/CDZ off, 2x with it on, as a CDZ's drive
-wire [1:0] cd_speed = {1'b0, SYSTEM_CDZ};
+// cd_ring's counters reach the wait counter only on the Turbo path: words 122-125 are 0 with Turbo off
+wire [127:0] r_dbg_ring;
+assign dbg_ringc = turbo ? r_dbg_ring : 128'd0;
 `endif
+always @(posedge CLK_48M) if (!nRESET && fr_done == fr_req) turbo <= status[12];
+// POCKET: no CD Speed item, in a release or a debug build: 1x with CD/CDZ off, 2x with it on, as a CDZ's drive
+wire [1:0] cd_speed = turbo ? 2'd3 : {1'b0, SYSTEM_CDZ};
 
 // POCKET: cdd_drive is megacdd of MiSTer's ARM side, and cd_dl_* the HPS channel. FF0181's reset stays
 // inside cd_sys, on drive.v: megacdd gets its reset command on nRESET only, and so does this.
@@ -494,6 +512,7 @@ reg  [1:0] disc_loading_ff = 0;
 reg        disc_loading_s = 0, disc_present_s = 0;
 reg  [6:0] track_count_s = 0;
 reg [23:0] disc_end_s = 0;
+reg [31:0] file_bytes = 0;      // bin_sectors * 2352, under 2^32: cd_mount counts at most 2^20 - 1 sectors of a CUE's BIN
 always @(posedge CLK_48M) begin
 	disc_loading_ff <= {disc_loading_ff[0], disc_loading};
 	disc_loading_s  <= disc_loading_ff[1];
@@ -502,6 +521,7 @@ always @(posedge CLK_48M) begin
 		disc_present_s <= disc_present;
 		track_count_s  <= track_count;
 		disc_end_s     <= disc_end;
+		file_bytes     <= (32'(bin_sectors) << 11) + (32'(bin_sectors) << 8) + (32'(bin_sectors) << 5) + (32'(bin_sectors) << 4);
 	end
 end
 
@@ -516,22 +536,68 @@ wire [15:0] cd_dl_data;
 wire dbg_poll;
 `endif
 
+// The drive's two sector sources, f_* cd_fetch and r_* cd_ring. The one Turbo does not pick has its request held at its own
+// req_done and sees no disc, so it drops its tags and reads nothing. The toggles of each pair, req_* with cdd_drive and fr_*
+// with cd_host, are the two sources' sum, as each keeps its own parity: cdd_drive is reset with the core and
+// takes the sum then, cd_host is not reset. Each source sees the other's toggle taken out of the answer
+wire f_req_done, r_req_done, f_fr_req, r_fr_req, f_fetch_err, r_fetch_err;
+wire [15:0] f_fr_slot, r_fr_slot;
+wire [31:0] f_fr_offset, r_fr_offset, r_fr_bridge, r_fr_len;
+wire [2:0] fr_bank_slot;        // cd_fetch names a bank slot; cd_host takes a bridge address and a length
+wire f_dl_download, f_dl_audio, f_dl_wr, r_dl_download, r_dl_audio, r_dl_wr;
+wire [11:1] f_dl_addr, r_dl_addr;
+wire [15:0] f_dl_data, r_dl_data;
+// cd_ring's ring read client, to pocket_mem_mux
+wire        rr_req, rr_done;
+wire [24:0] rr_word;
+wire [63:0] rr_data;
+
+assign req_done  = f_req_done ^ r_req_done;
+assign fr_req    = f_fr_req ^ r_fr_req;
+assign fr_slot   = turbo ? r_fr_slot   : f_fr_slot;
+assign fr_offset = turbo ? r_fr_offset : f_fr_offset;
+assign fr_bridge = turbo ? r_fr_bridge : 32'h7000_0000 | {17'd0, fr_bank_slot, 12'd0};
+assign fr_len    = turbo ? r_fr_len    : 32'd2352;
+assign fetch_err = turbo ? r_fetch_err : f_fetch_err;
+assign {cd_dl_download, cd_dl_audio, cd_dl_wr, cd_dl_addr, cd_dl_data} = turbo ?
+	{r_dl_download, r_dl_audio, r_dl_wr, r_dl_addr, r_dl_data} : {f_dl_download, f_dl_audio, f_dl_wr, f_dl_addr, f_dl_data};
+
 cd_fetch CD_FETCH
 (
 	.CLK_48M(CLK_48M),
 	.nRESET(nRESET),
-	.disc_present(disc_present_s),
+	.disc_present(disc_present_s & ~turbo),
 	.req_lba(req_lba), .req_audio(req_audio), .req_file(req_file), .req_file_lba(req_file_lba),
-	.req_valid(req_valid), .req_done(req_done),
-	.fr_req(fr_req), .fr_slot(fr_slot), .fr_offset(fr_offset), .fr_bank_slot(fr_bank_slot), .fr_done(fr_done), .fr_err(fr_err),
+	.req_valid(turbo ? f_req_done : req_valid ^ r_req_done), .req_done(f_req_done),
+	.fr_req(f_fr_req), .fr_slot(f_fr_slot), .fr_offset(f_fr_offset), .fr_bank_slot(fr_bank_slot), .fr_done(fr_done ^ r_fr_req), .fr_err(fr_err),
 	.bank_rd_addr(bank_rd_addr), .bank_rd_q(bank_rd_q),
-	.cd_dl_download(cd_dl_download), .cd_dl_audio(cd_dl_audio), .cd_dl_wr(cd_dl_wr),
-	.cd_dl_addr(cd_dl_addr), .cd_dl_data(cd_dl_data),
+	.cd_dl_download(f_dl_download), .cd_dl_audio(f_dl_audio), .cd_dl_wr(f_dl_wr),
+	.cd_dl_addr(f_dl_addr), .cd_dl_data(f_dl_data),
 	.cd_data_ready(CD_DATA_WR_READY), .cdda_ready(CDDA_WR_READY),
 `ifdef NEOGEO_WAIT_COUNTER
 	.dbg_poll(dbg_poll), .dbg_fetch(dbg_fetch),
 `endif
-	.fetch_err(fetch_err)
+	.fetch_err(f_fetch_err)
+);
+
+cd_ring CD_RING
+(
+	.CLK_48M(CLK_48M),
+	.nRESET(nRESET),
+	.disc_present(disc_present_s & turbo),
+	.file_bytes(file_bytes),
+	.req_lba(req_lba), .req_audio(req_audio), .req_file(req_file), .req_file_lba(req_file_lba),
+	.req_valid(turbo ? req_valid ^ f_req_done : r_req_done), .req_done(r_req_done),
+	.fr_req(r_fr_req), .fr_slot(r_fr_slot), .fr_offset(r_fr_offset), .fr_bridge(r_fr_bridge), .fr_len(r_fr_len),
+	.fr_done(fr_done ^ f_fr_req), .fr_err(fr_err),
+	.rr_req(rr_req), .rr_word(rr_word), .rr_done(rr_done), .rr_data(rr_data),
+	.cd_dl_download(r_dl_download), .cd_dl_audio(r_dl_audio), .cd_dl_wr(r_dl_wr),
+	.cd_dl_addr(r_dl_addr), .cd_dl_data(r_dl_data),
+	.cd_data_ready(CD_DATA_WR_READY), .cdda_ready(CDDA_WR_READY),
+`ifdef NEOGEO_WAIT_COUNTER
+	.dbg_ring(r_dbg_ring),
+`endif
+	.fetch_err(r_fetch_err)
 );
 
 wire cdd_poll, cdd_is_data, cdd_status_play;
@@ -599,7 +665,7 @@ wire CD_DATA_WR = ioctl_wr_x & CD_DATA_DOWNLOAD;
 wire CDDA_DOWNLOAD = cd_dl_download & cd_dl_audio;         // POCKET: was ioctl_index 4
 wire CDDA_WR = ioctl_wr_x & CDDA_DOWNLOAD;
 
-wire [2:0] dbg_hold;     // POCKET: cd.sv's hold, for the wait counter only
+wire [2:0] dbg_hold;     // POCKET: cd.sv's decoder-masked flag and its Turbo hold, for the wait counter only
 wire [36:0] dbg_sect_cd; // POCKET: cd.sv's sectors, likewise
 wire cd_lid_bit = !SYSTEM_CDZ ^ status[15];
 
@@ -764,7 +830,7 @@ neo_d0 D0(
 	.CLK_EN_24M_N(CLK_EN_24M_N),
 	.nRESET(nRESET), .nRESETP(nRESETP),
 	.CLK_68KCLK(CLK_68KCLK), .CLK_68KCLKB(CLK_68KCLKB), .CLK_EN_12M(CLK_EN_12M), .CLK_EN_12M_N(CLK_EN_12M_N), .CLK_EN_6MB(CLK_EN_6MB), .CLK_EN_1HB(CLK_EN_1HB),
-	.CLK_EN_68K_P(CLK_EN_68K_P), .CLK_EN_68K_N(CLK_EN_68K_N),
+	.CLK_EN_68K_P(CLK_EN_68K_P_12), .CLK_EN_68K_N(CLK_EN_68K_N_12),
 	.M68K_ADDR_A4(M68K_ADDR[4]),
 	.M68K_DATA(M68K_DATA[5:0]),
 	.nBITWD0(nBITWD0),
@@ -798,9 +864,40 @@ wire [1:0] IPL_OUT = ~SYSTEM_CDx ? { IPL1,IPL0 } : CD_IPL;
 // If the address is in a ROM zone, PROM_DATA_READY is used to extend the normal nDTACK output by NEO-C1
 // POCKET: MVS backup RAM is in CRAM0, a read of it waits as one of a ROM
 wire BK_RD = ~(nSRAMOEL & nSRAMOEU) & SYSTEM_MVS;
-wire nDTACK_ADJ = ~&{nSROMOE, nROMOE, nPORTOE, ~CD_EXT_RD, ~CD_TR_RD_FIX, ~CD_TR_RD_SPR, ~BK_RD} ? ~PROM_DATA_READY | nDTACK
-                    : ((CD_EXT_WR | CD_TR_WR_SPR) & ~DMA_RUNNING) ? ~CD_EXT_WR_READY | nDTACK     // POCKET: posted, unless the queue is full
-                    : (CD_TR_WR_PCM | CD_TR_WR_FIX) ? ~CD_PCM_DTACK | nDTACK     // POCKET: was ddram_dtack; until it is in the chip
+// POCKET: the 68K clock of the menu, status[46:45]: 12 MHz, the console's, or 16 or 24 from CLK_48M, whose two phases are all fx68k needs.
+// Everything on the 68K's bus takes these enables. The rest of the machine stays at its own clocks, and a change restarts the core.
+reg       cpu_t2 = 0;
+reg [1:0] cpu_t3 = 0;
+always @(posedge CLK_48M) begin
+	cpu_t2 <= ~cpu_t2;
+	cpu_t3 <= cpu_t3 == 2'd2 ? 2'd0 : cpu_t3 + 1'd1;
+end
+wire [1:0] cpu_clock = status[46:45];
+assign CLK_EN_68K_P = cpu_clock[1] ? ~cpu_t2 : cpu_clock[0] ? cpu_t3 == 2'd0 : CLK_EN_68K_P_12;
+assign CLK_EN_68K_N = cpu_clock[1] ?  cpu_t2 : cpu_clock[0] ? cpu_t3 == 2'd1 : CLK_EN_68K_N_12;
+
+// POCKET: the LSPC has room for one VRAM write and takes it at its own slots, one each 32 clocks: tb_top measured up to 43 clocks
+// from a write's strobe to the LSPC taking it. An overclocked 68K's access to the LSPC waits until 48 clocks after the strobe of the
+// last one, or the next write would replace one still waiting. The LSPC latches a write's data, and a read's, as its strobe falls,
+// so the hold keeps the strobe from it, not only DTACK from the 68K; DTACK waits 2 clocks more, for the read data.
+reg       lspc_grant = 0;
+reg [5:0] lspc_gap = 0;
+reg [1:0] lspc_hold_d = 0;
+wire      lspc_on = ~nLSPOE | ~nLSPWE;
+wire      lspc_hold = |cpu_clock & lspc_on & ~lspc_grant & (lspc_gap != 0);
+always @(posedge CLK_48M) begin
+	lspc_grant <= lspc_on & ~lspc_hold;
+	if (lspc_on & ~lspc_hold & ~lspc_grant) lspc_gap <= 6'd48;
+	else if (lspc_gap != 0)                 lspc_gap <= lspc_gap - 1'd1;
+	lspc_hold_d <= {lspc_hold_d[0], lspc_hold};
+end
+wire nLSPOE_HELD = nLSPOE | lspc_hold;
+wire nLSPWE_HELD = nLSPWE | lspc_hold;
+wire lspc_wait = lspc_hold | (lspc_on & |lspc_hold_d);
+
+wire nDTACK_ADJ = lspc_wait ? 1'b1 : ~&{nSROMOE, nROMOE, nPORTOE, ~CD_EXT_RD, ~CD_TR_RD_FIX, ~CD_TR_RD_SPR, ~BK_RD} ? ~PROM_DATA_READY | nDTACK
+                    : ((CD_EXT_WR | CD_TR_WR_SPR | CD_TR_WR_PCM) & ~DMA_RUNNING) ? ~CD_EXT_WR_READY | nDTACK     // POCKET: posted, unless the queue is full
+                    : CD_TR_WR_FIX ? ~CD_FIX_DTACK | nDTACK     // POCKET: was ddram_dtack; until it is in the chip
                     : (CD_TR_RD_PCM) ? ~ADPCMA_RD_DTACK | nDTACK
                     : nDTACK;
 
@@ -810,14 +907,16 @@ wire       dbg_bios_unibios;
 wire [15:0] dbg_bios_requested;
 `ifdef NEOGEO_CD
 wire [7:0] bios_model_byte = SYSTEM_CDZ ? 8'd2 : 8'd0;	// CDZ or top loader
+wire bios_region_on = 0;	// the CD's region is the hardware's, status[11:10]
 `else
+wire bios_region_on = |status[32:31];	// 0 leaves the BIOS's own setting
 wire [7:0] bios_model_byte = SYSTEM_MVS ? 8'h80 : 8'h00;	// arcade or console
 `endif
 bios_model BIOS_MODEL
 (
 	.clk(CLK_48M), .nRESET(nRESET),
 	.nAS(nAS), .nUDS(nUDS), .nLDS(nLDS), .M68K_RW(M68K_RW), .M68K_ADDR(M68K_ADDR),
-	.data_in(cpu_dataout), .model(bios_model_byte), .data_out(FX68K_DATAOUT),
+	.data_in(cpu_dataout), .model(bios_model_byte), .region_on(bios_region_on), .region(8'(status[32:31] - 2'd1)), .data_out(FX68K_DATAOUT),
 	.unibios(dbg_bios_unibios), .requested(dbg_bios_requested)
 );
 
@@ -933,7 +1032,7 @@ neo_pvc neo_pvc
 	.P2_ADDR(P2ROM_ADDR_PVC)
 );
 
-neo_sma neo_sma
+neo_sma_pocket neo_sma	// POCKET: the copy in rtl/pocket, which registers the bank port's write data
 (
 	.nRESET(nRESET),
 	.CLK_48M(CLK_48M),
@@ -1354,7 +1453,7 @@ wire  [4:0] ADPCMA_BANK;
 wire [23:0] ADPCMB_ADDR;
 
 // POCKET: V ROM and M1 loads go through pocket_mem_mux (R3), so the ddram write path is gone. The CD's PCM
-// writes are the mux's: CD_PCM_DTACK, where ddram_dtack was.
+// writes are the mux's, posted to its queue: ddram_dtack held the 68K for each.
 
 // The ddram request and ack signals work on either edge
 // To trigger a read request, just set adpcm_rd to ~adpcm_rdack
@@ -1439,6 +1538,7 @@ wire dbg_zone = ~&{nSROMOE, nROMOE, nPORTOE} | CD_EXT_RD | CD_EXT_WR;
 wire dbg_zone = ~&{nSROMOE, nROMOE, nPORTOE} | BK_RD;
 `endif
 assign dbg_wait = {dbg_at_req, dbg_zone, nAS, nRESET};
+assign dbg_ovc = {cpu_clock, M68K_RW, M68K_ADDR};
 `ifdef NEOGEO_CD
 // {fetch_err; transfer writes Z80, PCM, SPR, FIX; status latch; cur_lba; cur_status; status; command}
 assign dbg_cdd = {fetch_err, CD_TR_WR_Z80, CD_TR_WR_PCM, CD_TR_WR_SPR, CD_TR_WR_FIX, CDD_STATUS_LATCH, dbg_cur_lba, dbg_cur_status, CDD_STATUS, CDD_COMMAND_DATA};
@@ -1462,6 +1562,10 @@ assign dbg_cd2 = {dbg_bios_unibios, dbg_bios_requested, dbg_hold, dbg_swap_in_dm
 `endif
 `ifdef NEOGEO_CD
 localparam bit MUX_CD_BUILD = 1;
+// The ring's writes only with Turbo, which picks cd_ring: a bridge write into the ring's window without it is drained and
+// dropped here, so the FIFO of cd_ring_wr keeps up with the bridge whatever the pick and never holds a stale word
+wire mux_rw_take;
+assign rw_take = turbo ? mux_rw_take : rw_valid;
 `else
 localparam bit MUX_CD_BUILD = 0;
 `endif
@@ -1497,7 +1601,7 @@ pocket_mem_mux #(.RD_WAIT(`NEOGEO_RD_WAIT), .READY_COMB(`NEOGEO_READY_COMB), .CD
 	.CD_TR_WR_SPR(CD_TR_WR_SPR),
 	.CD_TR_WR_PCM(CD_TR_WR_PCM),
 	.CD_BANK_PCM(CD_BANK_PCM),
-	.CD_PCM_DTACK(CD_PCM_DTACK),
+	.CD_FIX_DTACK(CD_FIX_DTACK),
 
 	.DMA_ADDR_OUT(DMA_ADDR_OUT),
 	.DMA_ADDR_IN(DMA_ADDR_IN),
@@ -1551,6 +1655,14 @@ pocket_mem_mux #(.RD_WAIT(`NEOGEO_RD_WAIT), .READY_COMB(`NEOGEO_READY_COMB), .CD
 
 	.fx_req(fx_req), .fx_we(fx_we), .fx_word(fx_word), .fx_be(fx_be), .fx_wdata(fx_wdata), .fx_ack(fx_ack), .fx_rdata(fx_rdata),
 
+`ifdef NEOGEO_CD
+	.rw_valid(rw_valid & turbo), .rw_word(rw_word), .rw_data(rw_data), .rw_take(mux_rw_take),
+	.rr_req(rr_req), .rr_word(rr_word), .rr_done(rr_done), .rr_data(rr_data),
+`else
+	.rw_valid(1'b0), .rw_word(25'd0), .rw_data(16'd0), .rw_take(),
+	.rr_req(1'b0), .rr_word(25'd0), .rr_done(), .rr_data(),
+`endif
+
 	.BK_RD(BK_RD), .BK_WR({~nBWU, ~nBWL}),
 	.bk_req(bk_req), .bk_we(bk_we), .bk_addr(sram_addr), .bk_wdata(sd_buff_dout), .bk_ack(bk_ack), .bk_rdata(sram_buff_dout),
 	.ROM_COPY_BUSY(sram_busy),
@@ -1589,7 +1701,7 @@ jt10 YM2610(
 	.adpcma_addr(ADPCMA_ADDR), .adpcma_bank(ADPCMA_BANK), .adpcma_roe_n(nSDROE), .adpcma_data(adpcma_d),
 	.adpcmb_addr(ADPCMB_ADDR), .adpcmb_roe_n(nSDPOE), .adpcmb_data(SYSTEM_CDx ? 8'h08 : adpcmb_d),	// CD has no ADPCM-B
 	.snd_right(ym_right), .snd_left(ym_left),     // POCKET: were the ports, see the mix below
-	.snd_enable(~{4{dbg_menu}} | ~status[28:25]), .ch_enable(~status[62:57])
+	.snd_enable(~status[28:25]), .ch_enable(~status[62:57])	// POCKET: the Mute menu, without MiSTer's debug-menu gate
 );
 
 `ifdef NEOGEO_CD
@@ -1597,19 +1709,29 @@ wire [16:0] snd_mix_l = $signed(ym_left) + $signed(CD_AUDIO_L);
 wire [16:0] snd_mix_r = $signed(ym_right) + $signed(CD_AUDIO_R);
 
 // POCKET: halved as MiSTer's AUDIO_L and AUDIO_R, which is what keeps the sum in range
-assign snd_left  = snd_mix_l[16:1];
-assign snd_right = snd_mix_r[16:1];
+wire [15:0] snd_out_l = snd_mix_l[16:1];
+wire [15:0] snd_out_r = snd_mix_r[16:1];
 `else
 // POCKET: CD audio is tied off in the cart build, snd_left/snd_right go out directly
-assign snd_left  = ym_left;
-assign snd_right = ym_right;
+wire [15:0] snd_out_l = ym_left;
+wire [15:0] snd_out_r = ym_right;
 `endif
+
+// POCKET: MiSTer does the Stereo Mix in its framework. Each side gives up a share to the other: 1/8, 1/4 or, for mono, 1/2
+wire        [2:0] mix_shift = 3'd4 - 3'(status[6:5]);
+wire signed [15:0] cross_l  = $signed(snd_out_l) >>> mix_shift;
+wire signed [15:0] cross_r  = $signed(snd_out_r) >>> mix_shift;
+assign snd_left  = status[6:5] != 0 ? snd_out_l - cross_l + cross_r : snd_out_l;
+assign snd_right = status[6:5] != 0 ? snd_out_r - cross_r + cross_l : snd_out_r;
 
  
 // For Neo CD only
 wire VIDEO_EN = SYSTEM_CDx ? CD_VIDEO_EN : 1'b1;
 wire FIX_EN = SYSTEM_CDx ? CD_FIX_EN : 1'b1;
 wire SPR_EN = SYSTEM_CDx ? CD_SPR_EN : 1'b1;
+`ifdef NEOGEO_WAIT_COUNTER
+assign dbg_voff = ~{VIDEO_EN, FIX_EN, SPR_EN};
+`endif
 wire DOTA_GATED = SPR_EN & DOTA;
 wire DOTB_GATED = SPR_EN & DOTB;
 wire HSync; //,VSync;
@@ -1626,7 +1748,7 @@ lspc2_a2_sync	LSPC(
 	.IPL0(IPL0), .IPL1(IPL1),
 	.CD_VBLANK_IRQ_EN(CD_VBLANK_IRQ_EN | ~SYSTEM_CDx),
 	.CD_TIMER_IRQ_EN(CD_TIMER_IRQ_EN | ~SYSTEM_CDx),
-	.LSPOE(nLSPOE), .LSPWE(nLSPWE),
+	.LSPOE(nLSPOE_HELD), .LSPWE(nLSPWE_HELD),
 	.PBUS_OUT(PBUS[15:0]), .PBUS_IO(PBUS[23:16]),
 	.nPBUS_OUT_EN(nPBUS_OUT_EN),
 	.DOTA(DOTA_GATED), .DOTB(DOTB_GATED),
@@ -1684,7 +1806,6 @@ spram #(13,16) PALRAM(
 // DAC latches
 // POCKET: ce_pix is a port
 reg [2:0] HBlank;
-reg HBlank304;
 always @(posedge CLK_VIDEO) begin
 	reg [9:0] pxcnt;
 

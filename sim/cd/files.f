@@ -1,5 +1,6 @@
 # The cd bench: cd_host against core_bridge_cmd.v and the host's side of target commands (with the wait
-# counter's slot write, which only that build has), and cd_fetch streaming into MiSTer's cd_sys
+# counter's slot write, which only that build has), cd_fetch streaming into MiSTer's cd_sys, and cd_ring with
+# cd_ring_wr
 +define+NEOGEO_WAIT_COUNTER=1
 -Wno-PROCASSWIRE
 +incdir+rtl/cd
@@ -16,5 +17,7 @@ rtl/cd/lc8951.v
 upstream/NeoGeo_MiSTer/rtl/cd/cdda.v
 rtl/cd/cd_host.sv
 rtl/cd/cd_fetch.sv
+rtl/cd/cd_ring_wr.sv
+rtl/cd/cd_ring.sv
 rtl/pocket/bios_model.sv
 rtl/test/wait_counter.sv

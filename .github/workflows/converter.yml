@@ -1,0 +1,137 @@
+# The NeoMillieCD Converter for Windows, macOS and Linux, attached to a release.
+#
+# Runs when a release is published, building that release's tag, or by hand for a release that already exists
+# (Actions, "Converter executables", Run workflow, with its tag), building the branch it is run from unless a ref is
+# given. Each system runs the selftests from source, builds the window with PyInstaller, runs the built program's
+# selftest, and uploads its zip to that release. The zip names do not start with uniplexed.NeoMillieCD_, so the
+# openFPGA library's updater does not take them for the core.
+name: Converter executables
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag of the existing release to attach the zips to, as v0.6.0
+        required: true
+        type: string
+      ref:
+        description: Branch, tag or commit to build, if not the one this workflow runs from
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  window:
+    if: github.repository == 'uniplexed/neomillie'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            zip: NeoMillieCD-Converter-windows-x64.zip
+          - os: macos-15                    # Apple Silicon; macos-14 was retired on 2026-11-02
+            zip: NeoMillieCD-Converter-macos-arm64.zip
+          - os: ubuntu-22.04                # the oldest glibc GitHub still offers, so the program runs on older systems
+            zip: NeoMillieCD-Converter-linux-x64.zip
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Selftest from source
+        run: |
+          python -c "import tkinter"
+          python -B tools/cd_convert.py --selftest
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a python -B tools/cd_convert_gui.py --selftest
+          else
+            python -B tools/cd_convert_gui.py --selftest
+          fi
+      - name: Build
+        run: |
+          python -m pip install pyinstaller==6.22.3
+          # A one-file program on Windows and Linux; on macOS the .app, which PyInstaller builds as a folder.
+          # NeoMillieCD's icon on the .exe and the .app; a Linux program file carries none
+          case "$RUNNER_OS" in
+            Windows) mode=--onefile; python -B tools/make_logo.py icon.ico --cd; icon=--icon=icon.ico ;;
+            macOS) mode=--onedir; python -B tools/make_logo.py icon.icns --cd; icon=--icon=icon.icns ;;
+            Linux) mode=--onefile; icon= ;;
+          esac
+          pyinstaller --noconfirm $mode --windowed $icon --name "NeoMillieCD Converter" --paths tools tools/cd_convert_gui.py
+      - name: Selftest of the built program
+        run: |
+          case "$RUNNER_OS" in
+            Windows) "dist/NeoMillieCD Converter.exe" --selftest ;;
+            macOS) "dist/NeoMillieCD Converter.app/Contents/MacOS/NeoMillieCD Converter" --selftest ;;
+            Linux) xvfb-run -a "dist/NeoMillieCD Converter" --selftest ;;
+          esac
+      - name: Zip, with the licences
+        run: |
+          # The native libraries inside the program, by name: the licence file covers each one or the step fails
+          case "$RUNNER_OS" in
+            Linux) libs=$(pyi-archive_viewer -l -r "dist/NeoMillieCD Converter" | grep -o "'[^'/]*\.so[^'/]*'" | tr -d "'") ;;
+            Windows) libs=$(pyi-archive_viewer -l -r "dist/NeoMillieCD Converter.exe" | grep -o -i "'[^'/\]*\.dll'" | tr -d "'") ;;
+            macOS) libs=$(find "dist/NeoMillieCD Converter.app" -type f \( -name "*.dylib" -o -name Python \) -exec basename {} \;) ;;
+          esac
+          libs=$(echo "$libs" | sort -u)
+          python -B tools/third_party_licenses.py dist/THIRD-PARTY-LICENSES.txt "$TAG" "$(git rev-parse HEAD)" $libs
+          cp LICENSE dist/LICENSE.txt
+          cd dist
+          if [ "$RUNNER_OS" = macOS ]; then
+            # ditto keeps the bundle's links and signature, which a plain zip would break
+            ditto -c -k --keepParent "NeoMillieCD Converter.app" "../${{ matrix.zip }}"
+          else
+            python -m zipfile -c "../${{ matrix.zip }}" NeoMillieCD\ Converter*
+          fi
+          python -c "import sys, zipfile; z = zipfile.ZipFile(sys.argv[1], 'a', zipfile.ZIP_DEFLATED); [z.write(f) for f in sys.argv[2:]]; z.close()" "../${{ matrix.zip }}" LICENSE.txt THIRD-PARTY-LICENSES.txt
+          python -m zipfile -l "../${{ matrix.zip }}" > ../contents.txt
+          grep -q "^LICENSE.txt " ../contents.txt
+          grep -q "^THIRD-PARTY-LICENSES.txt " ../contents.txt
+      - name: Upload to the release
+        run: gh release upload "$TAG" "${{ matrix.zip }}" --clobber
+
+  scripts:
+    if: github.repository == 'uniplexed/neomillie'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.8'
+      - name: Selftest with the oldest Python the script supports
+        run: python -B tools/cd_convert.py --selftest
+      - name: Zip
+        run: |
+          cp LICENSE tools/LICENSE.txt
+          cd tools
+          python -m zipfile -c ../NeoMillieCD-Converter-python.zip cd_convert.py cd_convert_gui.py make_logo.py make_icon.py cdconv LICENSE.txt
+          rm LICENSE.txt
+          cd ..
+          python -m zipfile -l NeoMillieCD-Converter-python.zip
+      - name: Selftest of the zip, unpacked on its own
+        run: |
+          mkdir "$RUNNER_TEMP/z"
+          cd "$RUNNER_TEMP/z"
+          python -m zipfile -e "$GITHUB_WORKSPACE/NeoMillieCD-Converter-python.zip" .
+          python -B cd_convert.py --selftest
+          xvfb-run -a python -B cd_convert_gui.py --selftest
+      - name: Upload to the release
+        run: gh release upload "$TAG" NeoMillieCD-Converter-python.zip --clobber

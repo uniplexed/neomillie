@@ -29,12 +29,14 @@ module tb_wait_counter;
         .clk_48m(clk48), .nRESET, .nAS, .rom_zone(1'b0), .at_req(2'd1), .vblank, .c1_wait(3'd0),
         .clk_74a(clk74), .bridge_addr, .bridge_rd, .bridge_rd_data(rd3), .bridge_wr(1'b0), .bridge_wr_data(32'd0), .run(1'b0), .save_now(),
         .save_done(1'b0), .save_err(3'd0),
-        .cdd, .disc_bin_size(32'd1234), .disc_reason(4'd1), .cd2, .fetch, .dma, .sect, .dmab(49'd0), .bus68(18'd0), .dreq(26'd0)
+        .cdd, .disc_bin_size(32'd1234), .disc_reason(4'd1), .open_log(384'd0), .cd2, .fetch, .dma, .sect, .dmab(49'd0), .bus68(18'd0), .dreq(26'd0),
+        .rcnt({32'hCD00_0000, 32'hCD00_0001, 32'hCD00_0002, 32'hCD00_0003}), .ovc({2'd2, 24'd0}), .vid(5'b11000)
     );
 
     // A second one, for the runs: a file the host loads, a record per run, a save as a reset starts
     logic         r_nRESET = 0, r_vblank = 0, r_wr = 0, r_rd = 0, r_run = 0;
     logic [31:0]  r_addr = 32'h8000_0000, r_wdata = 0;
+    logic [25:0]  r_dreq = 0;
     wire  [31:0]  r_q;
     wire          r_save;
     int           r_saves = 0;
@@ -45,7 +47,7 @@ module tb_wait_counter;
         .clk_74a(clk74), .bridge_addr(r_addr), .bridge_rd(r_rd), .bridge_rd_data(r_q),
         .bridge_wr(r_wr), .bridge_wr_data(r_wdata), .run(r_run), .save_now(r_save),
         .save_done(1'b0), .save_err(3'd0),
-        .cdd(114'd0), .disc_bin_size(32'd0), .disc_reason(4'd0), .cd2(54'd0), .fetch(320'd0), .dma(384'd0), .sect(37'd0), .dmab(49'd0), .bus68(18'd0), .dreq(26'd0)
+        .cdd(114'd0), .disc_bin_size(32'd0), .disc_reason(4'd0), .open_log(384'd0), .cd2(54'd0), .fetch(320'd0), .dma(384'd0), .sect(37'd0), .dmab(49'd0), .bus68(18'd0), .dreq(r_dreq), .rcnt(128'd0), .ovc(26'd0), .vid(5'b11000)
     );
 
     // Early reads on their own: a run of its own reset, its 68K bus and its DMA
@@ -58,12 +60,57 @@ module tb_wait_counter;
     logic  [32:0] e_info = 0;
     logic  [25:0] e_dreq = 0;
     logic [113:0] e_cdd = 0;
+    logic [127:0] e_rcnt = 0;
+    logic [0:9][31:0] e_fetch = 0;
+    logic  [25:0] e_ovc = 0;
+    logic   [4:0] e_vid = 5'b11000;
     wait_counter ear (
         .clk_48m(clk48), .nRESET(e_nRESET), .nAS(e_nAS), .rom_zone(1'b0), .at_req(2'd1), .vblank(e_vblank), .c1_wait(3'd0),
         .clk_74a(clk74), .bridge_addr(32'h8000_0000), .bridge_rd(1'b0), .bridge_rd_data(), .bridge_wr(1'b0), .bridge_wr_data(32'd0),
         .run(1'b0), .save_now(), .save_done(1'b0), .save_err(3'd0),
-        .cdd(e_cdd), .disc_bin_size(32'd0), .disc_reason(4'd0), .cd2(e_cd2), .fetch(320'd0), .dma(384'd0), .sect({e_fate, e_sect33, e_info}), .dmab(e_dmab), .bus68(e_bus68), .dreq(e_dreq)
+        .cdd(e_cdd), .disc_bin_size(32'd0), .disc_reason(4'd0), .open_log(384'd0), .cd2(e_cd2), .fetch(e_fetch), .dma(384'd0), .sect({e_fate, e_sect33, e_info}), .dmab(e_dmab), .bus68(e_bus68), .dreq(e_dreq), .rcnt(e_rcnt), .ovc(e_ovc), .vid(e_vid)
     );
+
+    // The overclock counters on a cart instance: no CD feed, the 68K's address and clock setting
+    logic         o_nRESET = 0, o_nAS = 1, o_vblank = 0;
+    logic  [25:0] o_ovc = 0, o_dreq = 0;
+    logic   [4:0] o_vid = 5'b11000;
+    wait_counter #(.CD(0)) ovk (
+        .clk_48m(clk48), .nRESET(o_nRESET), .nAS(o_nAS), .rom_zone(1'b0), .at_req(2'd1), .vblank(o_vblank), .c1_wait(3'd0),
+        .clk_74a(clk74), .bridge_addr(32'h8000_0000), .bridge_rd(1'b0), .bridge_rd_data(), .bridge_wr(1'b0), .bridge_wr_data(32'd0),
+        .run(1'b0), .save_now(), .save_done(1'b0), .save_err(3'd0),
+        .cdd(114'd0), .disc_bin_size(32'd0), .disc_reason(4'd0), .open_log(384'd0), .cd2(54'd0), .fetch(320'd0), .dma(384'd0),
+        .sect(37'd0), .dmab(49'd0), .bus68(18'd0), .dreq(o_dreq), .rcnt(128'd0), .ovc(o_ovc), .vid(o_vid)
+    );
+
+    task automatic o_bus(input logic [22:0] a);
+        o_ovc[22:0] = a;
+        o_nAS = 0;
+        tick(3);
+        o_nAS = 1;
+        tick(1);
+    endtask
+
+    task automatic o_frame();
+        o_vblank = 1;
+        tick(130);
+        o_vblank = 0;
+        tick(4);
+    endtask
+
+    // A frame with this many lit pixels, the layers in off being off at a visible pixel, and all of them off in blanking
+    task automatic o_vframe(input int lit, input logic [2:0] off);
+        o_vid = {1'b0, 1'b0, 3'b111};
+        tick(4);
+        o_vid = {1'b0, 1'b1, off};
+        tick(4);
+        o_vid[4] = 1;
+        tick(lit);
+        o_vid[4] = 0;
+        tick(4);
+        o_vid = {1'b0, 1'b0, 3'b111};
+        o_frame();
+    endtask
 
     task automatic e_bus(input logic [23:0] byte_addr, input bit write);
         e_cd2[30:8] = byte_addr[23:1];
@@ -88,6 +135,52 @@ module tb_wait_counter;
         e_bus68[15:0] = 16'hDEAD;               // the next cycle's: not the one taken
         e_cd2[31] = 1;
         tick(4);
+    endtask
+
+    // A frame of ear's: it opens with these layers off and no lit pixel, or lit all through with none off, and closes at VBlank
+    task automatic e_vopen(input logic [2:0] off);
+        e_vid = {off == 0, 1'b1, off};
+        tick(off == 0 ? 9000 : 4);
+    endtask
+
+    task automatic e_vclose();
+        e_vid = 5'b00111;
+        e_vblank = 1;
+        tick(130);
+        e_vblank = 0;
+        tick(4);
+    endtask
+
+    // A bus cycle seen by its address alone, and a write strobe of the transfer area: 109 FIX, 110 SPR, 111 PCM, 112 Z80
+    task automatic e_addr(input logic [22:0] a);
+        e_ovc[22:0] = a;
+        e_nAS = 0;
+        tick(3);
+        e_nAS = 1;
+        tick(2);
+    endtask
+
+    task automatic e_strobe(input int bit_no);
+        e_cdd[bit_no] = 1;
+        tick(2);
+        e_cdd[bit_no] = 0;
+        tick(2);
+    endtask
+
+    // drive.v sends a command to the drive; a sector request toggles dreq[25]
+    task automatic e_cmd(input logic [39:0] c);
+        e_cdd[39:0] = c;
+        e_cd2[7] = 1; tick; e_cd2[7] = 0; tick(4);
+    endtask
+
+    task automatic e_req(input bit audio);
+        e_dreq = {~e_dreq[25], audio, e_dreq[23:0] + 24'd1};
+        tick(20);
+    endtask
+
+    // An entry of the load log, its 4 words
+    task automatic e_entry(input int n, output logic [31:0] e [4]);
+        for (int k = 0; k < 4; k++) e[k] = ear.tl[10'(4 * n + k)];
     endtask
 
     task automatic e_dma(input logic [23:0] byte_addr, input bit write);
@@ -364,70 +457,205 @@ module tb_wait_counter;
 
         test_bios_model();
 
-        // ---- The timeline, on its own instance, CD/CDZ on: tl_sel 1 ----
+        // ---- The load log, on its own instance: CD/CDZ on, 2x, Turbo on (a ring count not 0) ----
         e_cd2[0] = 1;
+        e_cd2[3:2] = 2'b01;
+        e_rcnt[95:80] = 16'd5;                  // the ring's waits
+        e_rcnt[63:48] = 16'hFFFF;               // min_ahead as it resets
+        e_fetch[6] = 32'd100;                   // cd_fetch's late polls
         tick(2);
         e_nRESET = 1;
         tick(4);
-        check(ear.tl_on && ear.tl_sel, $sformatf("timeline on %0d, setting %0d", ear.tl_on, ear.tl_sel));
-        e_cdd[39:0] = 40'hD071200003;           // PLAY to 00:02:17: entry 1
-        e_cd2[7] = 1; tick; e_cd2[7] = 0; tick(4);
-        e_cdd[39:0] = 40'hA000000000;           // IDLE: left out
-        e_cd2[7] = 1; tick; e_cd2[7] = 0; tick(4);
-        e_write(24'h10F650, 16'h0200, 2'b10);   // the queue's head: left out
-        e_write(24'h10F650, 16'h0001, 2'b01);   // its tail: entry 2
-        e_write(24'h10F688, 16'h0058, 2'b11);   // the count: entry 3
-        e_write(24'h10F688, 16'h0058, 2'b11);   // the same again: left out
-        e_write(24'hFF0002, 16'h0550, 2'b11);   // not watched
-        e_bus(24'h10F688, 0);                   // a read
-        e_dreq = {1'b1, 1'b0, 24'd17}; tick(4); // a data sector asked for: entry 4
-        e_info = {1'b1, 32'h0100_1702};         // and offered, DMA'd: entry 5
-        e_fate[2] = 1; tick(4);
-        e_cdd[83:80] = 4'h1; e_cdd[107:84] = 24'd17; tick(4);   // the status: entry 6
-        e_dreq = {1'b0, 1'b1, 24'd1000}; tick(4);       // the first audio one: entry 7
-        e_dreq = {1'b1, 1'b1, 24'd1001}; tick(4);       // the next: left out
-        e_cdd[39:0] = 40'h7012850603;           // the music: entry 8, the trigger
-        e_cd2[7] = 1; tick; e_cd2[7] = 0; tick(4);
         begin
-            automatic bit [3:0] want_ty [1:8] = '{4'd0, 4'd5, 4'd5, 4'd1, 4'd2, 4'd6, 4'd1, 4'd0};
-            automatic logic [31:0] want_pay [1:8] = '{32'h0712_0003, {11'd0, 3'd0, 2'b01, 16'h0001}, {11'd0, 3'd2, 2'b11, 16'h0058},
-                32'd17, 32'h0100_1702, {4'h1, 4'd0, 24'd17}, {1'b1, 7'd0, 24'd1000}, 32'h0128_5063};
-            for (int k = 1; k <= 8; k++) begin
-                automatic logic [31:0] a = ear.tl[{1'b1, 8'(k), 1'b0}], d = ear.tl[{1'b1, 8'(k), 1'b1}];
-                check(a[31:28] == want_ty[k] && d == want_pay[k], $sformatf("timeline entry %0d: type %0d payload %08x, want %0d %08x", k, a[31:28], d, want_ty[k], want_pay[k]));
+            automatic logic [39:0] PLAY = 40'hD071200003, PAUSE = 40'h4000000006, STOP = 40'h9000000001;
+            automatic logic [63:0] t_start, t_end;
+            automatic logic [31:0] e [4];
+            automatic int got, want;
+            automatic logic [15:0] lba0;
+            tick(600);                              // the trace's words are cleared as the core opens
+            check(ear.tr_clr == 0 && ear.tr_wp == 0 && ear.tl[512] == 0 && ear.tl[1023] == 0, "the trace is not clear after the first release");
+            lba0 = e_dreq[15:0];
+            // A PLAY, 5 data sectors, a PAUSE: one entry
+            e_cmd(PLAY);
+            t_start = ear.total;
+            repeat (5) e_req(0);
+            e_rcnt[95:80] = 16'd8;
+            e_fetch[6] = 32'd103;
+            tick(100);
+            e_info[31:0] = 32'h01_17_02_00;         // a sector DMA'd: mode 1, frame 17, second 02, minute 00
+            e_fate = e_fate ^ 3'b100;
+            tick(20000);
+            e_cmd(PAUSE);
+            t_end = ear.total;
+            tick(12);
+            e_entry(1, e);
+            got = int'(e[1][27:0] - e[0][27:0]);
+            want = int'(t_end[37:10] - t_start[37:10]);
+            check(e[0][31:28] == 4'b1_01_1, $sformatf("load 1: flags %b, want Turbo, 2x, CDZ", e[0][31:28]));
+            check(e[1][31:28] == 4'd1, $sformatf("load 1: reason %0d, want 1 (PAUSE)", e[1][31:28]));
+            check(got >= want - 1 && got <= want + 1 && want > 15, $sformatf("load 1: %0d units, the bench drove %0d", got, want));
+            check(e[2] == {16'd1, 16'd5}, $sformatf("load 1: %0d PLAYs, %0d sectors, want 1 and 5", e[2][31:16], e[2][15:0]));
+            check(e[3] == {ear.run_no[7:0], 12'd3, 12'd3}, $sformatf("load 1: word 3 %08x, want run %0d, 3 ring waits, 3 late polls", e[3], ear.run_no));
+            check(ear.tl[0] == {16'h4C44, 7'd0, 1'b0, 8'd2}, $sformatf("load log header %08x after one load", ear.tl[0]));
+            check(ear.tl[1] == 0 && ear.tl[2] == 0 && ear.tl[3] == 0, "entry 0's words 1 to 3 are not 0");
+            // The trace of that load: the PLAY's target, the five requests, the ring's wait, the sector DMA'd, the PAUSE, in order
+            begin
+                automatic logic [3:0]  k [9] = '{4'd1, 4'd3, 4'd3, 4'd3, 4'd3, 4'd3, 4'd8, 4'd5, 4'd2};
+                automatic logic [15:0] v [9] = '{16'h0217, lba0 + 16'd1, lba0 + 16'd2, lba0 + 16'd3, lba0 + 16'd4, lba0 + 16'd5, 16'd8, 16'h0217, 16'h0006};
+                check(ear.tr_wp == 9'd9, $sformatf("%0d trace events, want 9", ear.tr_wp));
+                foreach (k[i]) check(ear.tl[512 + i][31:28] == k[i] && ear.tl[512 + i][15:0] == v[i],
+                                     $sformatf("trace event %0d is %08x, want kind %0d value %04x", i, ear.tl[512 + i], k[i], v[i]));
+                check(ear.tl[512 + 8][27:16] != ear.tl[512][27:16], "the trace's time did not move in 20,000 clocks");
+                check(ear.words[126][11:3] == ear.tr_wp, "word 126 does not carry the trace's next word");
+                // Out of a load a sector at the decoder is no event
+                e_fate = e_fate ^ 3'b010;
+                tick(8);
+                check(ear.tr_wp == 9'd9 && ear.tl[512 + 9] == 0, "a sector out of a load made a trace event");
             end
-            check(ear.tl[{1'b1, 8'd1, 1'b0}][27:0] <= ear.tl[{1'b1, 8'd8, 1'b0}][27:0], "the timeline's time went back");
-            check(ear.tl[{1'b1, 9'd0}] == 0, "entry 0 written before the timeline stopped");
+            // The music: a PLAY to an audio track, audio sectors only. No entry
+            e_cmd(PLAY);
+            repeat (3) e_req(1);
+            tick(12);
+            check(ear.tl[0][7:0] == 8'd2, $sformatf("a load of audio sectors only wrote an entry: head %0d", ear.tl[0][7:0]));
+            // Data sectors ended by an audio one: reason 3; Turbo off now
+            e_rcnt = 0;
+            e_cd2[3:2] = 2'b11;
+            repeat (2) e_req(0);
+            e_req(1);
+            tick(12);
+            e_entry(2, e);
+            check(e[0][31:28] == 4'b0_11_1 && e[1][31:28] == 4'd3 && e[2] == {16'd0, 16'd2},
+                  $sformatf("load 2: flags %b, reason %0d, word 2 %08x; want 0111, 3, 2 sectors", e[0][31:28], e[1][31:28], e[2]));
+            // A STOP: reason 2
+            e_req(0);
+            e_cmd(STOP);
+            tick(12);
+            e_entry(3, e);
+            check(e[1][31:28] == 4'd2 && e[2] == {16'd0, 16'd1}, $sformatf("load 3: reason %0d, word 2 %08x", e[1][31:28], e[2]));
+            // A reset cuts a load: reason 4, the run that was cut
+            e_req(0);
+            e_req(0);
+            e_nRESET = 0;
+            tick(12);
+            e_entry(4, e);
+            check(e[1][31:28] == 4'd4 && e[2] == {16'd0, 16'd2} && e[3][31:24] == ear.run_no[7:0],
+                  $sformatf("load 4: reason %0d, word 2 %08x, run %0d", e[1][31:28], e[2], e[3][31:24]));
+            check(ear.tl[0] == {16'h4C44, 7'd0, 1'b0, 8'd5}, $sformatf("load log header %08x after four loads", ear.tl[0]));
+            e_nRESET = 1;
+            tick(4);
+            // Entry 127 wraps the head to 1: the words past it are the trace's
+            ear.tl_head = 8'd127;
+            e_req(0);
+            e_cmd(PAUSE);
+            tick(12);
+            e_entry(127, e);
+            check(e[1][31:28] == 4'd1 && e[2] == {16'd0, 16'd1}, $sformatf("load 127: reason %0d, word 2 %08x", e[1][31:28], e[2]));
+            check(ear.tl[0] == {16'h4C44, 7'd0, 1'b1, 8'd1}, $sformatf("load log header %08x after entry 127", ear.tl[0]));
         end
-        // 96 entries from the music, which is the first: 95 more stop it, and one after that is left out
-        begin
-            automatic logic t = e_dreq[25];
-            for (int k = 0; k < 96; k++) begin
-                t = ~t;
-                e_dreq = {t, 1'b0, 24'(2000 + k)};
-                tick(5);
-            end
-        end
-        tick(6);
-        check(ear.tl_done == 2'b10 && !ear.tl_on, $sformatf("done %b, on %0d", ear.tl_done, ear.tl_on));
-        check(ear.tl[{1'b1, 9'd0}] == {16'h544C, 7'd0, 1'b0, 8'd104}, $sformatf("entry 0: %08x", ear.tl[{1'b1, 9'd0}]));
-        check(ear.tl[{1'b1, 9'd1}] == ear.run_no, $sformatf("the run in entry 0: %0d", ear.tl[{1'b1, 9'd1}]));
-        check(ear.tl[{1'b1, 8'd103, 1'b1}] == 32'(2000 + 94), $sformatf("the last entry: %0d", ear.tl[{1'b1, 8'd103, 1'b1}]));
-        // A reset with the same setting keeps it; with the other it records in the other half
-        e_nRESET = 0; tick(4); e_nRESET = 1; tick(4);
-        check(!ear.tl_on && ear.tl[{1'b1, 9'd0}] != 0, "a Reset Core overwrote the stopped timeline");
-        e_nRESET = 0; e_cd2[0] = 0; tick(4); e_nRESET = 1; tick(4);
-        check(ear.tl_on && !ear.tl_sel, "no timeline for the other setting");
-        e_cdd[39:0] = 40'hD071200003;
-        e_cd2[7] = 1; tick; e_cd2[7] = 0; tick(4);
-        check(ear.tl[{1'b0, 8'd1, 1'b1}] == 32'h0712_0003, $sformatf("the other half's first entry: %08x", ear.tl[{1'b0, 8'd1, 1'b1}]));
-        // The file's second 4 KB goes to the timelines: no run number from there, and it reads back through the bridge
+        // The file's second 4 KB goes to the load log: no run number from there, and it reads back through the bridge. A
+        // header the host loads says where the next entry goes
         begin
             automatic logic [31:0] was = runs.loaded_run;
             r_write(8, 105, 32'd99);
+            r_write(8, 0, 32'h4C44_0007);
             repeat (4) @(posedge clk74);
-            check(runs.loaded_run == was, $sformatf("a word of the timeline changed the loaded run to %0d", runs.loaded_run));
-            r_expect(8, 105, 32'd99, "a timeline word through the bridge");
+            check(runs.loaded_run == was, $sformatf("a word of the load log changed the loaded run to %0d", runs.loaded_run));
+            r_expect(8, 105, 32'd99, "a load log word through the bridge");
+        end
+        // ---- The overclock counters, on a cart instance (CD = 0): 16 MHz ----
+        o_ovc[25:24] = 2'd1;
+        o_nRESET = 1;
+        tick(4);
+        repeat (20) begin o_bus(23'h60_0100); o_bus(23'h60_0101); o_bus(23'h60_0102); end
+        // A period-3 loop of 60 cycles: from the 4th each matches 3 back, idle from the 9th (6 in a row)
+        check(ovk.n_idle == 40'd52, $sformatf("a period-3 loop: %0d idle cycles, want 52", ovk.n_idle));
+        o_frame();                              // a frame with idle cycles: not busy
+        for (int i = 0; i < 20; i++) begin o_bus(23'h60_0200); o_bus(23'h10_0000 + 23'(i)); end
+        check(ovk.n_idle == 40'd52, $sformatf("a copy loop counted idle: %0d", ovk.n_idle));
+        o_frame();                              // busy: the copy loop
+        o_frame();                              // busy: no cycle at all
+        repeat (5) begin o_bus(23'h60_0100); o_bus(23'h60_0101); o_bus(23'h60_0102); end
+        o_frame();                              // idle again: the streak ends at 2
+        o_frame();                              // busy, a streak of 1
+        check(ovk.n_busy == 32'd3 && ovk.longest == 16'd2, $sformatf("%0d busy frames, longest %0d; want 3 and 2", ovk.n_busy, ovk.longest));
+        check(ovk.n_cyc == 40'd115, $sformatf("%0d bus cycles, want 115", ovk.n_cyc));
+        begin
+            automatic logic [9:0] at = {ovk.run_no[2:0], 7'd0};
+            check(ovk.copy[at + 48] == {2'd1, 1'b0, 29'd0}, $sformatf("cart word 48: %08x", ovk.copy[at + 48]));
+            check(ovk.copy[at + 50] == 32'd3 && ovk.copy[at + 51] == {16'd2, 16'd0}, $sformatf("cart words 50, 51: %08x %08x", ovk.copy[at + 50], ovk.copy[at + 51]));
+            check(ovk.copy[at + 49] == 32'(ovk.n_idle >> 8) && ovk.copy[at + 52] == 32'(ovk.n_cyc >> 8), "cart words 49, 52 not the counts / 256");
+        end
+        // Dark frames and layers off, words 53-56 and 60-63: a run of frames in one state is one entry, newest first
+        begin
+            automatic logic [19:0] f0;
+            automatic logic [31:0] prev;
+            automatic logic [9:0] at = {ovk.run_no[2:0], 7'd0};
+            o_vframe(9000, 3'b000);             // closes the frame the bench was in, whatever it held
+            prev = ovk.v_ring[0];
+            o_vframe(9000, 3'b000);
+            check(ovk.v_ring[0] == prev, "a lit frame with every layer on, off only in blanking, made an entry");
+            f0 = ovk.frames[19:0];
+            o_vframe(0, 3'b000);                // black
+            o_vframe(0, 3'b000);                // black again: the same entry
+            o_vframe(9000, 3'b100);             // lit, video off at a visible pixel
+            o_vframe(3000, 3'b000);             // under 8192 lit
+            o_vframe(100, 3'b011);              // under 2048 lit, FIX and SPR off
+            o_vframe(9000, 3'b000);             // normal: no entry, and the next black frame is a new one
+            o_vframe(0, 3'b000);
+            check(ovk.v_ring[4] == {5'b11_000, 7'd2, f0}, $sformatf("two black frames: %08x, from frame %0d", ovk.v_ring[4], f0));
+            check(ovk.v_ring[3] == {5'b00_100, 7'd1, f0 + 20'd2}, $sformatf("video off: %08x", ovk.v_ring[3]));
+            check(ovk.v_ring[2] == {5'b01_000, 7'd1, f0 + 20'd3}, $sformatf("a dim frame: %08x", ovk.v_ring[2]));
+            check(ovk.v_ring[1] == {5'b10_011, 7'd1, f0 + 20'd4}, $sformatf("a darker frame, two layers off: %08x", ovk.v_ring[1]));
+            check(ovk.v_ring[0] == {5'b11_000, 7'd1, f0 + 20'd6}, $sformatf("black after a normal frame: %08x", ovk.v_ring[0]));
+            repeat (140) o_vframe(0, 3'b000);
+            check(ovk.v_ring[0][26:20] == 7'd127, $sformatf("a long run counts %0d frames, want 127", ovk.v_ring[0][26:20]));
+            o_vframe(9000, 3'b000);
+            tick(200);
+            check(ovk.copy[at + 53] == ovk.v_ring[0] && ovk.copy[at + 56] == ovk.v_ring[3] && ovk.copy[at + 60] == ovk.v_ring[4]
+                  && ovk.copy[at + 63] == ovk.v_ring[7], "words 53-56 and 60-63 are not the entries, newest first");
+        end
+        // The cart has no load log: a data sector and an audio one write nothing
+        o_dreq = {1'b1, 1'b0, 24'd3}; tick(20);
+        o_dreq = {1'b0, 1'b1, 24'd4}; tick(20);
+        check(ovk.tl[0][31:16] != 16'h4C44, $sformatf("the cart wrote a load log header: %08x", ovk.tl[0]));
+        // Layers off in detail, words 110-121: what the program did in the last two runs of frames with a layer off
+        begin
+            automatic logic [19:0] f0;
+            automatic logic [9:0] at;
+            automatic logic [191:0] first_run;
+            e_vopen(3'b000); e_vclose();        // closes the frame the bench was in
+            e_vopen(3'b000); e_vclose();
+            f0 = ear.frames[19:0];
+            e_vopen(3'b101);                    // video and SPR off, three frames
+            e_strobe(109); e_strobe(109); e_addr(23'h123456);
+            e_vclose();
+            check(ear.d_ent == {5'b11_101, 7'd1, f0} && ear.d_first == {1'b0, 8'd0, 23'h123456} && ear.d_fz == {16'd2, 16'd0},
+                  $sformatf("a run's first frame: %08x %08x %08x", ear.d_ent, ear.d_first, ear.d_fz));
+            e_vopen(3'b101);
+            e_strobe(110); e_strobe(110); e_strobe(110);
+            e_dmab[48] = 1; tick(2); e_dmab[48] = 0;
+            ear.f_cyc = 18'd40000;              // a frame's worth of bus cycles, without driving them
+            e_vclose();
+            e_vopen(3'b101);
+            e_strobe(111); e_strobe(112); e_addr(23'h606DA1);
+            e_vclose();
+            check(ear.d_ent == {5'b11_101, 7'd3, f0}, $sformatf("three frames with layers off: %08x, from frame %0d", ear.d_ent, f0));
+            check(ear.d_first == {1'b1, 8'd2, 23'h123456}, $sformatf("DMA, cycles / 16384 and the first address: %08x", ear.d_first));
+            check(ear.d_last == {9'd0, 23'h606DA1}, $sformatf("the last address: %08x", ear.d_last));
+            check(ear.d_fz == {16'd2, 16'd1} && ear.d_spr == 32'd3 && ear.d_pcm == 32'd1,
+                  $sformatf("writes: FIX and Z80 %08x, SPR %0d, PCM %0d", ear.d_fz, ear.d_spr, ear.d_pcm));
+            first_run = {ear.d_ent, ear.d_first, ear.d_last, ear.d_fz, ear.d_spr, ear.d_pcm};
+            e_vopen(3'b000); e_strobe(110); e_vclose();     // a frame with every layer on: its write is no run's
+            check({ear.d_ent, ear.d_spr} == {first_run[191:160], 32'd3}, "a frame with every layer on changed the run before it");
+            e_vopen(3'b010); e_strobe(110); e_vclose();     // FIX off, one frame: a new run, and the one before moves down
+            check(ear.d_ent == {5'b11_010, 7'd1, f0 + 20'd4} && ear.d_spr == 32'd1 && ear.d_fz == 0 && !ear.d_first[31],
+                  $sformatf("the second run: %08x, SPR %0d", ear.d_ent, ear.d_spr));
+            check(ear.d_old == first_run, "the run before is not kept whole");
+            e_vopen(3'b000); e_vclose();
+            tick(200);
+            at = {ear.run_no[2:0], 7'd0};
+            check(ear.copy[at + 110] == ear.d_ent && ear.copy[at + 115] == ear.d_pcm && ear.copy[at + 116] == first_run[191:160]
+                  && ear.copy[at + 121] == first_run[31:0], "words 110-121 are not the two runs, the newer first");
         end
         // Late STAT3 reads: sect[33] toggles
         repeat (3) begin e_sect33 = ~e_sect33; tick(3); end
@@ -437,7 +665,8 @@ module tb_wait_counter;
         check(w[1][15:0] == 16'd3, $sformatf("layout %0d", w[1][15:0]));
         check(w[2] == 32'(frames_seen) && w[22] == w[2], $sformatf("frames %0d %0d, the bench %0d", w[2], w[22], frames_seen));
         check(w[30] == 32'd1234 && w[27][31:28] == 4'd1, "disc words");
-        for (int i = 48; i < 64; i++) check(w[i] == (32'h5A00_0000 | 32'(i)), $sformatf("word %0d is %08x, not the pattern", i, w[i]));
+        for (int i = 57; i < 60; i++) check(w[i] == (32'h5A00_0000 | 32'(i)), $sformatf("word %0d is %08x, not the pattern", i, w[i]));
+        check(w[48] == {2'd2, 1'b1, 29'd0}, $sformatf("word 48 %08x, want 24 MHz and the CD build", w[48]));
         check(w[127] == 32'h5A00_007F, $sformatf("word 127 is %08x", w[127]));
 
         // Settings, and the resets: the start, the one at frame 4, the one of the unanswered command
@@ -452,12 +681,14 @@ module tb_wait_counter;
         check(w[64] == 32'hF008 && w[65] == 32'hF009, $sformatf("fetch words 64, 65: %08x %08x", w[64], w[65]));
         for (int i = 0; i < 12; i++) check(w[66 + i] == 32'hD000 + 32'(i), $sformatf("DMA word %0d is %08x", 66 + i, w[66 + i]));
         check(w[78] == 32'd2 && w[79] == 32'd2, $sformatf("nowhere %0d, swaps %0d", w[78], w[79]));
-        check(w[1][23:19] == 5'd6, $sformatf("revision %0d", w[1][23:19]));
+        check(w[1][23:19] == 5'd12, $sformatf("revision %0d", w[1][23:19]));
         check(w[106] == {16'd2, 16'd1}, $sformatf("hold: %08x, want 2 holds, 1 ran out", w[106]));
         check(w[108] == 32'd3, $sformatf("sectors: %0d taken", w[108]));
         check(lost_frame[9] == lost_frame[0] + 1, "the lost sectors span a frame");
-        check(w[109] == 32'h0100_0009 && w[126] == 32'd1, $sformatf("the last sector offered: %08x %08x", w[109], w[126]));
-        for (int i = 107; i < 126; i++) if (i != 108 && i != 109) check(w[i] == 0, $sformatf("word %0d is %08x with no BIOS write", i, w[i]));
+        for (int i = 0; i < 4; i++) check(w[122 + i] == 32'hCD00_0000 + 32'(i), $sformatf("ring word %0d is %08x", 122 + i, w[122 + i]));
+        check(w[109] == 32'h0100_0009 && (w[126] & ~32'h0000_0FF8) == 32'd1,      // bits 11:3 are the trace's next word
+              $sformatf("the last sector offered: %08x %08x", w[109], w[126]));
+        for (int i = 107; i < 126; i++) if (i != 108 && i != 109 && (i < 122 || i > 125)) check(w[i] == 0, $sformatf("word %0d is %08x with no BIOS write", i, w[i]));
 
         // The ring: entry 0 the unanswered 11th, then 10, 9 ... with their answers. Frames: each command's own
         check(w[80] == 32'd10, $sformatf("%0d commands", w[80]));    // of 11 sent: cmd_word(1) is a TOC, which the ring leaves out
@@ -514,13 +745,20 @@ module tb_wait_counter;
         r_nRESET = 1;
         tick(3);
         r_frame();
+        // A load in the run after the loaded file: its entry goes where the loaded header said
+        r_dreq = {1'b1, 1'b0, 24'd5};
+        tick(20);
+        r_dreq = {1'b0, 1'b1, 24'd6};
+        tick(20);
+        check(runs.tl[29][31:28] == 4'd3 && runs.tl[30] == {16'd0, 16'd1}, $sformatf("the load after a loaded header: %08x %08x", runs.tl[29], runs.tl[30]));
+        r_expect(8, 0, 32'h4C44_0008, "the load log header after a loaded one");
         r_expect(5, 105, 32'd13, "the first run after a loaded file");
         r_expect(5, 0, 32'h4E47_5754, "the run's own record");
         r_expect(4, 2, 32'd1111, "a loaded record");
         r_expect(4, 105, 32'd12, "a loaded record");
         r_expect(1, 2, 32'd2222, "a loaded record");
-        r_expect(5, 48, 32'h5A00_0030, "the pattern in a run's record");
-        r_expect(3, 48, 32'h5A00_0030, "the pattern in an empty record");
+        r_expect(5, 57, 32'h5A00_0039, "the pattern in a run's record");
+        r_expect(3, 57, 32'h5A00_0039, "the pattern in an empty record");
 
         // ---- A reset asks for a save at once, keeps the last frame, and the next run has its own record ----
         check(r_saves == 0, $sformatf("%0d saves before any reset", r_saves));

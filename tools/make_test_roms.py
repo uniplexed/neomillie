@@ -93,6 +93,8 @@ class Asm:
     def nop(self, n=1): self.w(*[0x4E71] * n)
     def kick(self): self.w(0x13C0); self.long(0x300001)                 # MOVE.B D0,$300001
     def lea_a0(self, a): self.w(0x41F9); self.long(a)
+    def move_d0_a0(self): self.w(0x3080)                                 # MOVE.W D0,(A0)
+    def move_d2_abs(self, a): self.w(0x33C2); self.long(a)              # MOVE.W D2,addr
     def tst_w_a0p(self): self.w(0x4A58)
     def addq_w_1(self, a): self.w(0x5279); self.long(a)
     def tas(self, a): self.w(0x4AF9); self.long(a)
@@ -132,6 +134,34 @@ class Asm:
     def cmp_a0_d0_b(self): self.w(0xB010)                               # CMP.B (A0),D0
     def moveq_d0(self, v): self.w(0x7000 | v)
     def moveq_d1(self, v): self.w(0x7200 | v)
+
+
+# Unused tile maps (slow cycle) and the shrink words of sprites 64-511 (fast cycle), in loops of 8 writes
+VRAM_BURST = ((0x1000, 0xA500, 128), (0x8040, 0x5A00, 56))
+
+
+def vram_burst(a, base, seed, loops):
+    """Writes seed, seed+1, ... to VRAM from base as fast as the 68K can, then reads every word back."""
+    a.move_w_imm(base, 0x3C0000)
+    a.lea_a0(0x3C0002)
+    a.move_w_d0_imm(seed)
+    a.move_w_d1_imm(loops - 1)
+    a.label(f"burst_w_{base:x}")
+    for _ in range(8):
+        a.move_d0_a0()
+        a.addq_w_1_d0()
+    a.dbf_d1(f"burst_w_{base:x}")
+    a.move_w_d0_imm(seed)
+    a.move_w_d2_imm(base)
+    a.move_w_d1_imm(loops * 8 - 1)
+    a.label(f"burst_r_{base:x}")
+    a.move_d2_abs(0x3C0000)
+    a.nop(8)
+    a.cmp_w_d0_abs(0x3C0002)
+    a.bne("fail_vram")
+    a.addq_w_1_d0()
+    a.addq_w_1_d2()
+    a.dbf_d1(f"burst_r_{base:x}")
 
 
 def vram_set(a, addr, *data):
@@ -228,6 +258,9 @@ def bios():
     a.nop(8)
     a.cmp_w_imm(0x1001, 0x3C0002)
     a.bne("fail_vram")
+    # Back to back writes, 12 cycles apart, over several lines: at 24 MHz each comes before the LSPC has taken the one before
+    for burst in VRAM_BURST:
+        vram_burst(a, *burst)
     a.move_w_imm(5, MBOX)
 
     # Z80: command on the upper lane of $320000, the reply is the command plus one

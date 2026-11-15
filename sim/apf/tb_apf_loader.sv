@@ -20,7 +20,7 @@ module tb_apf_loader;
     localparam int  SILENCE   = 6187;       // 64 us of CLK_96M
 
     // What must have no effect
-    localparam logic [11:0] IGNORED_REGS [8] = '{12'h014, 12'h01C, 12'h020, 12'h050, 12'h110, 12'h204, 12'h300, 12'h308};
+    localparam logic [11:0] IGNORED_REGS [5] = '{12'h014, 12'h01C, 12'h020, 12'h050, 12'h308};
     localparam logic [31:0] UNMAPPED_ADDRS [6] = '{32'h10B0_0000, 32'h10E0_0000, 32'h10F0_0000,
                                                    32'h1100_0000, 32'h3000_0000, 32'h8000_0000};
 
@@ -43,7 +43,7 @@ module tb_apf_loader;
 
     logic        reset_n = 0, allcomplete = 0, reconfiguring = 0, rtc_valid = 0;
     logic [31:0] rtc_date = 0, rtc_time = 0;
-    logic [31:0] key1 = 0, key2 = 0, key3 = 0, key4 = 0;
+    logic [31:0] key1 = 0, key2 = 0;
 
     // The data table of core_bridge_cmd.v: 1 clock of read latency
     logic [31:0] dt [0:1023];
@@ -60,7 +60,7 @@ module tb_apf_loader;
     wire        ioctl_download, ioctl_wr, apf_core_reset, width320, mvs, prom1_conflict;
     wire  [7:0] ioctl_index;
     wire [26:0] ioctl_addr;
-    wire [15:0] ioctl_dout, joy0, joy1, joy2, joy3, save_dout;
+    wire [15:0] ioctl_dout, joy0, joy1, save_dout;
     wire [63:0] status;
     wire [31:0] cfg;
     wire [64:0] rtc;
@@ -107,10 +107,10 @@ module tb_apf_loader;
         .dataslot_update(dsu), .dataslot_update_id(dsu_id), .dataslot_update_size(dsu_size),
         .rtc_valid(rtc_valid), .rtc_date_bcd(rtc_date), .rtc_time_bcd(rtc_time),
         .datatable_addr(dt_addr), .datatable_wren(dt_wren), .datatable_data(dt_data), .datatable_q(dt_q),
-        .cont1_key(key1), .cont2_key(key2), .cont3_key(key3), .cont4_key(key4),
+        .cont1_key(key1), .cont2_key(key2),
         .ioctl_download(ioctl_download), .ioctl_index(ioctl_index), .ioctl_wr(ioctl_wr),
         .ioctl_addr(ioctl_addr), .ioctl_dout(ioctl_dout),
-        .joystick_0(joy0), .joystick_1(joy1), .joystick_2(joy2), .joystick_3(joy3),
+        .joystick_0(joy0), .joystick_1(joy1),
         .status(status), .cfg(cfg), .rtc(rtc), .v2_offset(v2_offset), .v2rom_mask(v2rom_mask),
         .width320(width320), .video_slot(video_slot), .mvs(mvs),
         .apf_core_reset(apf_core_reset), .prom1_conflict(prom1_conflict),
@@ -146,7 +146,7 @@ module tb_apf_loader;
         .dataslot_update(dsu), .dataslot_update_id(dsu_id), .dataslot_update_size(dsu_size),
         .rtc_valid(rtc_valid), .rtc_date_bcd(rtc_date), .rtc_time_bcd(rtc_time),
         .datatable_addr(dtc_addr), .datatable_wren(dtc_wren), .datatable_data(dtc_data), .datatable_q(dtc_q),
-        .cont1_key(key1), .cont2_key(key2), .cont3_key(key3), .cont4_key(key4),
+        .cont1_key(key1), .cont2_key(key2),
         .status(cd_status), .cfg(cd_cfg), .mvs(cd_mvs),
         .bk_ack(1'b0), .sram_buff_dout(16'd0), .card_buff_dout(16'd0),
         .disc_size(cd_disc_size), .disc_bin_size(cd_disc_bin_size), .cd_mount_req(cd_mount),
@@ -205,7 +205,7 @@ module tb_apf_loader;
         .CD_TR_AREA(3'd0), .CD_EXT_WR(1'b0), .CD_EXT_RD(1'b0), .CD_USE_FIX(1'b0),
         .CD_TR_RD_FIX(1'b0), .CD_TR_WR_FIX(1'b0), .CD_BANK_SPR(2'd0),
         .CD_USE_SPR(1'b0), .CD_TR_RD_SPR(1'b0), .CD_TR_WR_SPR(1'b0),
-        .CD_TR_WR_PCM(1'b0), .CD_BANK_PCM(1'b0), .CD_PCM_DTACK(),
+        .CD_TR_WR_PCM(1'b0), .CD_BANK_PCM(1'b0), .CD_FIX_DTACK(),
         .fx_req(), .fx_we(), .fx_word(), .fx_be(), .fx_wdata(), .fx_ack(1'b0), .fx_rdata(16'h0),
         .DMA_ADDR_OUT(24'h0), .DMA_ADDR_IN(24'h0), .DMA_DATA_OUT(16'h0), .DMA_RUNNING(1'b0), .DMA_SDRAM_BUSY(),
         .adpcma_addr(25'd0), .adpcma_dout(), .adpcma_req(1'b0), .adpcma_ack(),
@@ -602,11 +602,27 @@ module tb_apf_loader;
         setting(REG_V2_MASK, 0);
 
         // status: the bits one by one, others stay
-        setting(REG_DIPSW, 32'h0000_00FE);
-        if (status[7] !== 1 || status[9:8] !== 0) fail("DIPSW[0] to status[7]");
-        setting(REG_DIPSW_OLD, 32'h0000_003F);
-        if (status[7] !== 0 || status[9:8] !== 2'b11) fail("DIPSW[7:6] to status[9:8]");
-        setting(REG_DIPSW, 32'h0000_00FF);
+        setting(REG_DIPSW, 32'h0000_0001);
+        if (status[7] !== 1 || status[9:8] !== 0) fail("REG_DIPSW bit 0 to status[7]");
+        setting(REG_DIPSW, 32'h0000_0006);
+        if (status[7] !== 0 || status[9:8] !== 2'b11) fail("REG_DIPSW bits 2:1 to status[9:8]");
+        setting(REG_DIPSW, 32'h0000_0000);
+        // The rest of the menu, each to its status bits. NEO-FTC1B is MVS only
+        setting(REG_STEREO_MIX, 3);
+        if (status[6:5] !== 2'd3) fail("stereo mix");
+        setting(REG_STEREO_MIX, 0);
+        setting(REG_SND_MUTE, 4'b1010);
+        if (status[28:25] !== 4'b1010) fail("sound mutes");
+        setting(REG_SND_MUTE, 0);
+        setting(REG_CH_MUTE, 6'b100001);
+        if (status[62:57] !== 6'b100001) fail("channel mutes");
+        setting(REG_CH_MUTE, 0);
+        // MiSTer's multitaps have no menu item: their bits stay off
+        if (status[44:43] !== 2'b00) fail("multitap bits");
+        setting(REG_SYSTEM_TYPE, 1);
+        setting(REG_CART_REGION, 2);
+        if (status[32:31] !== 2'd2) fail("cart region");
+        setting(REG_CART_REGION, 0);
         setting(REG_SYSTEM_TYPE_OLD, 0);
         if (status[1] !== 0 || mvs !== 0) fail("SYSTEM_TYPE old");
         setting(REG_SYSTEM_TYPE, 1);
@@ -800,27 +816,31 @@ module tb_apf_loader;
     endtask
 
     task automatic test_joystick_mapping();
-        // U D L R, A B X/C Y/D, Start, Select on 9 and 10, then keys that drive nothing
+        // U D L R, A B X/C Y/D, Start, Select on 9 and 10, L1 and R1 the A+B and C+D buttons, then keys that drive nothing
         int          keys[15] = '{0, 1, 2, 3, 4, 5, 6, 7, 15, 14, 8, 9, 10, 11, 28};
         logic [15:0] joys[15] = '{16'h0008, 16'h0004, 16'h0002, 16'h0001, 16'h0010, 16'h0020, 16'h0040, 16'h0080,
-                                  16'h0100, 16'h0600, 16'h0, 16'h0, 16'h0, 16'h0, 16'h0};
+                                  16'h0100, 16'h0600, 16'h1000, 16'h2000, 16'h0, 16'h0, 16'h0};
         begin_test("test_joystick_mapping");
         for (int i = 0; i < 15; i++) begin
             key1 = 32'd1 << keys[i];
             key2 = key1;
-            key3 = key1;
-            key4 = key1;
             repeat (6) @(posedge clk96);
             check16($sformatf("joystick_0 key %0d", keys[i]), joy0, joys[i]);
             check16($sformatf("joystick_1 key %0d", keys[i]), joy1, joys[i]);
-            check16($sformatf("joystick_2 key %0d", keys[i]), joy2, joys[i]);
-            check16($sformatf("joystick_3 key %0d", keys[i]), joy3, joys[i]);
         end
         // Each pad is its own
-        key1 = 32'h1; key2 = 32'h2; key3 = 32'h4; key4 = 32'h8;
+        key1 = 32'h1; key2 = 32'h2;
         repeat (6) @(posedge clk96);
-        if ({joy0, joy1, joy2, joy3} !== {16'h8, 16'h4, 16'h2, 16'h1}) fail("pads are crossed");
-        key1 = 0; key2 = 0; key3 = 0; key4 = 0;
+        if ({joy0, joy1} !== {16'h8, 16'h4}) fail("pads are crossed");
+        // L/R Buttons: 1 makes L1 MiSTer's ABC key (bit 11), 2 makes R1 ABC; the other button keeps its combo
+        key1 = 32'h100; key2 = 32'h200;     // L1 on pad 1, R1 on pad 2
+        for (int m = 1; m <= 3; m++) begin
+            setting(REG_LR_BUTTONS, m % 3);  // 1, 2, then back to 0
+            repeat (6) @(posedge clk96);
+            check16($sformatf("L1 with L/R mode %0d", m % 3), joy0, m == 1 ? 16'h0800 : 16'h1000);
+            check16($sformatf("R1 with L/R mode %0d", m % 3), joy1, m == 2 ? 16'h0800 : 16'h2000);
+        end
+        key1 = 0; key2 = 0;
     endtask
 
     task automatic test_save_roundtrip();
@@ -1115,10 +1135,9 @@ module tb_apf_loader;
         repeat (10) @(posedge clk96);
         if (cd_status[14] !== 0) fail("CD/CDZ written unchanged reset the core");
         setting(REG_CD_REGION, 2);
-        setting(REG_CD_SPEED, 3);
         setting(REG_CD_LID, 1);
         repeat (10) @(posedge clk96);
-        if (cd_status[2] !== 1 || cd_status[11:10] !== 2 || cd_status[30:29] !== 3 || cd_status[15] !== 1)
+        if (cd_status[2] !== 1 || cd_status[11:10] !== 2 || cd_status[30:29] !== 0 || cd_status[15] !== 1)
             fail($sformatf("status = %h", cd_status));
         if (cd_cfg[31] !== 1) fail($sformatf("CD cfg = %h", cd_cfg));
         if (cd_mvs !== 0) fail("the CD build must not run the MVS clock");
@@ -1129,17 +1148,73 @@ module tb_apf_loader;
         rd_cd = 1;
         expect_setting(REG_CD_TYPE, 1);
         expect_setting(REG_CD_REGION, 2);
-        expect_setting(REG_CD_SPEED, 3);
         expect_setting(REG_CD_LID, 1);
         rd_cd = 0;
         setting(REG_CD_TYPE, 0);
         setting(REG_CD_REGION, 0);
-        setting(REG_CD_SPEED, 0);
         setting(REG_CD_LID, 0);
         repeat (10) @(posedge clk96);
         if (cd_status[2] !== 0 || cd_status[11:10] !== 0 || cd_status[30:29] !== 0 || cd_status[15] !== 0)
             fail($sformatf("settings did not clear, status = %h", cd_status));
         repeat (HOLD + 100) @(posedge clk74);       // the CD/CDZ change above restarted the CD instance
+    endtask
+
+    // The CD ring's bridge window, 0x7400_0000 plus the byte offset in the ring (cd_ring_wr.sv), is no address of the CD
+    // build's apf_loader: no setting, no slot, no save word. The cart build has no ring, and its 0x7 is the backup RAM file
+    int   cd_slot_wrs = 0, cd_settings_wrs = 0, cd_ioctl_wrs = 0, cd_card_wrs = 0, cd_bk_reqs = 0;
+    logic cd_bk_req_d = 0;
+    always @(posedge clk74) begin
+        if (dut_cd.slot_wr) cd_slot_wrs++;
+        if (dut_cd.settings_wr) cd_settings_wrs++;
+    end
+    always @(posedge clk96) begin
+        if (dut_cd.ioctl_wr) cd_ioctl_wrs++;
+        if (dut_cd.memcard_wr) cd_card_wrs++;
+        if (dut_cd.bk_req != cd_bk_req_d) cd_bk_reqs++;
+        cd_bk_req_d <= dut_cd.bk_req;
+    end
+
+    task automatic test_ring_window_alias();
+        logic [63:0] st0;
+        logic [31:0] cfg0;
+        int n0 [6], n1 [6];
+        begin_test("test_ring_window_alias");
+        host_idle();
+        st0  = cd_status;
+        cfg0 = cd_cfg;
+        n0   = '{cd_slot_wrs, cd_settings_wrs, cd_ioctl_wrs, cd_card_wrs, cd_bk_reqs, cd_mounts};
+        bfm.write32(32'h7400_0000, 32'h1122_3344);
+        bfm.write32(32'h7400_0614, 32'h0000_0001);      // the low bits of REG_CD_TURBO
+        bfm.write32(32'h7409_2FFC, 32'h5566_7788);      // the ring's last word
+        repeat (400) @(posedge clk96);
+        n1 = '{cd_slot_wrs, cd_settings_wrs, cd_ioctl_wrs, cd_card_wrs, cd_bk_reqs, cd_mounts};
+        if (cd_status !== st0) fail($sformatf("status %h became %h", st0, cd_status));
+        if (cd_cfg !== cfg0) fail($sformatf("cfg %h became %h", cfg0, cd_cfg));
+        if (n1 != n0) fail($sformatf("slot, setting, ioctl, card, backup writes and mounts: %p, before %p", n1, n0));
+    endtask
+
+    // Turbo 4x lands in status[12], reads back, and restarts the core only when it changes
+    task automatic test_cd_turbo();
+        begin_test("test_cd_turbo");
+        host_idle();
+        setting(REG_CD_TURBO, 1);
+        repeat (6) @(posedge clk96);
+        if (cd_status[12] !== 1) fail($sformatf("Turbo did not reach status[12]: %h", cd_status));
+        if (cd_status[14] !== 1) fail("changing Turbo did not reset the core");
+        if (status[12] !== 0) fail("the cart took Turbo");
+        rd_cd = 1;
+        expect_setting(REG_CD_TURBO, 1);
+        rd_cd = 0;
+        repeat (HOLD + 100) @(posedge clk74);
+        if (cd_status[14] !== 0) fail("stuck after changing Turbo");
+        setting(REG_CD_TURBO, 1);
+        repeat (10) @(posedge clk96);
+        if (cd_status[14] !== 0) fail("Turbo written unchanged reset the core");
+        setting(REG_CD_TURBO, 0);
+        repeat (6) @(posedge clk96);
+        if (cd_status[12] !== 0) fail("Turbo did not clear");
+        if (status[12] !== 0) fail("the cart took Turbo off");
+        repeat (HOLD + 100) @(posedge clk74);
     endtask
 
     // The disc slots' sizes come from the data table, and a mount is asked for when the host loads slot 2
@@ -1229,7 +1304,9 @@ module tb_apf_loader;
         test_download_window();
         test_prom1_conflict();
         test_cd_settings();
+        test_cd_turbo();
         test_disc_size_and_mount_req();
+        test_ring_window_alias();
 
         if (dl_overflow) fail("dl_overflow");
         if (status0_rises != 1) fail($sformatf("status[0] rose %0d times in the run", status0_rises));

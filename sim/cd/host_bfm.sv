@@ -23,8 +23,8 @@
 //
 // The register reads are each done twice: core_bridge_cmd.v loads bridge_rd_data on the strobe, so a
 // read answers with the word of the read before it (bridge_bfm.sv). fail_next answers the next command
-// with err 1 and no data. A file's card path is also its path below the run
-// directory, which prepare.py fills.
+// with err 1 and no data. latency_seq, while not empty, gives each command its latency in place of
+// latency_clks. A file's card path is also its path below the run directory, which prepare.py fills.
 `timescale 1ns/1ps
 package host_bfm_pkg;
     // One command as the host served it
@@ -54,6 +54,7 @@ module host_bfm import host_bfm_pkg::*; #(
     bridge_bfm bfm (.clk, .bridge_addr, .bridge_wr, .bridge_wr_data, .bridge_rd, .bridge_rd_data);
 
     int  latency_clks = LATENCY_CLKS;
+    int  latency_seq [$];           // per command, popped by each one while not empty
     bit  fail_next    = FAIL_NEXT;
     bit  quiet        = 1;
     string slot_file [int];         // slot id -> card path of the file it reads
@@ -151,7 +152,7 @@ module host_bfm import host_bfm_pkg::*; #(
         reg_read(8'h2C, c.len);
         bfm.write32(32'hF800_1000, 32'h6275_0000);
         c.t_busy = $realtime;
-        repeat (latency_clks) @(posedge clk);
+        repeat (latency_seq.size() != 0 ? latency_seq.pop_front() : latency_clks) @(posedge clk);
         if (fail_next) begin
             fail_next = 0;
             c.err = 1;

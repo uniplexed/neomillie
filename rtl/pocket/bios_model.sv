@@ -11,7 +11,8 @@
 // TOPLOAD, the BIOS reads a closed tray as open and leaves its disc reads (Samurai Shodown RPG's load failed on it). So no user
 // has to set anything, the core replaces whatever is written to that byte with the model its own menu asks for. The UniBIOS
 // writes its magic, $5632, to $10FE30 before the byte; a BIOS that does not is left alone. A consequence: the SYSTEM item in the
-// UniBIOS menu cannot change the model.
+// UniBIOS menu cannot change the model. The cart core's Region setting does the same to the region, the low byte of that word:
+// 0 Japan, 1 USA, 2 Europe. It takes effect when the BIOS next writes the byte, at boot.
 module bios_model (
     input             clk,
     input             nRESET,
@@ -22,6 +23,8 @@ module bios_model (
     input      [23:1] M68K_ADDR,
     input      [15:0] data_in,      // the 68K's write data
     input       [7:0] model,        // the value of the SYSTEM byte
+    input             region_on,    // replace the region byte
+    input       [7:0] region,
     output     [15:0] data_out,
     output reg        unibios = 0,
     output reg [15:0] requested = 0 // debug: what the BIOS last tried to write there: SYSTEM above, its region setting below
@@ -41,6 +44,6 @@ always @(posedge clk) begin
     end
 end
 
-assign data_out = (at_setting && unibios) ? {model, data_in[7:0]} : data_in;
+assign data_out = (at_setting && unibios) ? {model, region_on ? region : data_in[7:0]} : data_in;
 
 endmodule

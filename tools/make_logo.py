@@ -5,12 +5,17 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-"""The project's logo, from the core's icon: python tools/make_logo.py docs/neomillie.svg [--cd]
+"""The project's logo, from the core's icon: python tools/make_logo.py OUT.svg|OUT.png|OUT.ico|OUT.icns [--cd]
 
 Millie's pixels from make_icon.py, in her colours, with a line drawn around her: outside the drawing stays
-transparent, so the logo reads on a light or a dark page.
+transparent, so the logo reads on a light or a dark page. An .svg is the logo; a .png (256 pixels), an .ico
+(16, 32, 48 and 256 pixels) or an .icns (128, 256 and 512 pixels) is the disc converter's icon, its pixels
+scaled by a whole number and centred, or sampled below 36 pixels. Every image is a PNG, which Windows and macOS
+take inside an .ico and an .icns.
 """
+import struct
 import sys
+import zlib
 
 from make_icon import CART, DISC, DISC_X, DISC_Y, SIZE
 
@@ -72,10 +77,64 @@ def svg(cd):
             f'shape-rendering="crispEdges" role="img" aria-label="{title}"><title>{title}</title>' + "".join(runs) + "</svg>\n")
 
 
+def pixels(cd):
+    """Each pixel's colour, None where transparent."""
+    rows = art(cd)
+    out = outside(rows)
+    return [[colour(rows, out, x, y) for x in range(SIZE)] for y in range(SIZE)]
+
+
+def png(cd, size):
+    """The art as a size x size RGBA PNG."""
+    px = pixels(cd)
+    scale = size // SIZE
+    off = (size - SIZE * scale) // 2
+    raw = bytearray()
+    for y in range(size):
+        raw.append(0)       # no filter
+        for x in range(size):
+            if scale:
+                i, j = (x - off) // scale, (y - off) // scale
+                c = px[j][i] if 0 <= i < SIZE and 0 <= j < SIZE else None
+            else:
+                c = px[y * SIZE // size][x * SIZE // size]
+            raw += bytes.fromhex(c[1:]) + b"\xff" if c else bytes(4)
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes(raw), 9)) + chunk(b"IEND", b""))
+
+
+def ico(cd):
+    """A Windows icon of PNG images."""
+    images = [(n, png(cd, n)) for n in (16, 32, 48, 256)]
+    at = 6 + 16 * len(images)
+    entries = b""
+    for n, data in images:
+        entries += struct.pack("<BBBBHHII", n % 256, n % 256, 0, 0, 1, 32, len(data), at)
+        at += len(data)
+    return struct.pack("<HHH", 0, 1, len(images)) + entries + b"".join(d for _, d in images)
+
+
+def icns(cd):
+    """A macOS icon of PNG images."""
+    body = b"".join(kind + struct.pack(">I", 8 + len(d)) + d
+                    for kind, d in ((b"ic07", png(cd, 128)), (b"ic08", png(cd, 256)), (b"ic09", png(cd, 512))))
+    return b"icns" + struct.pack(">I", 8 + len(body)) + body
+
+
 def main(argv):
     if not argv or argv[0].startswith("-"):
         sys.exit(__doc__)
-    text = svg("--cd" in argv)
+    cd = "--cd" in argv
+    kind = argv[0].lower().rsplit(".", 1)[-1]
+    if kind in ("png", "ico", "icns"):
+        data = {"png": lambda: png(cd, 256), "ico": lambda: ico(cd), "icns": lambda: icns(cd)}[kind]()
+        open(argv[0], "wb").write(data)
+        print(argv[0], len(data), "bytes")
+        return 0
+    text = svg(cd)
     assert text.count("<rect") > 100 and "None" not in text
     open(argv[0], "w", encoding="ascii", newline="\n").write(text)
     print(argv[0], len(text), "bytes")
