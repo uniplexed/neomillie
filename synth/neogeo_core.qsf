@@ -1,4 +1,4 @@
-# Neo Geo cartridge core for the Analogue Pocket: what neogeo and neogeo_debug share.
+# Neo Geo cartridge core for the Analogue Pocket: what every build of the core shares.
 
 source ../pocket_common.qsf
 

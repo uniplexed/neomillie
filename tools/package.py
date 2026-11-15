@@ -5,12 +5,11 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-"""SD card package of the core: python tools/package.py neogeo|neogeo_debug|neogeocd|neogeocd_debug VERSION
+"""SD card package of the core: python tools/package.py neogeo|neogeocd VERSION
 
 Writes dist/uniplexed.NeoMillie_VERSION.zip from synth/neogeo/output_files/neogeo.rbf and pocket/neogeo:
 the bit-reversed bitstream and JSON files, the Platform entry (its image, tools/make_platform_image.py, for ngcd only), and the
-game list (tools/make_game_jsons.py) under the core's own folder in Assets. Millie's icon (tools/make_icon.py) goes in each core folder, the CD one for neogeocd*. The others are cores of their own, for tests; those built with the wait counter add the
-results slot of rtl/test/wait_counter.sv to data.json. neogeocd* are the Neo Geo CD core: its JSON files from
+game list (tools/make_game_jsons.py) under the core's own folder in Assets. Millie's icon (tools/make_icon.py) goes in each core folder, the CD one for neogeocd. neogeocd is the Neo Geo CD core: its JSON files from
 pocket/neogeocd, the ngcd Platform entry and no game list. No ROM, BIOS or disc goes in, and the tool checks that.
 """
 import datetime
@@ -30,14 +29,8 @@ from make_platform_image import image_bytes  # noqa: E402
 # revision: (core name, description or None, JSON directory under pocket, platform)
 REVISIONS = {
     "neogeo": ("NeoMillie", None, "neogeo", "ng"),
-    "neogeo_debug": ("NeoMillieDebug", "Neo Geo cart core, debug build with the 68K wait counter", "neogeo", "ng"),
     "neogeocd": ("NeoMillieCD", None, "neogeocd", "ngcd"),
-    "neogeocd_debug": ("NeoMillieCDDebug", "Neo Geo CD core, debug build with the 68K wait counter", "neogeocd", "ngcd"),
 }
-# As memory test's results slot, which ran on the Pocket: parameters 34 puts the file in the core's Saves folder
-WAIT_SLOT = {"name": "Wait counter", "id": "0x103", "required": False, "parameters": 34, "nonvolatile": True,
-             "filename": "wait.sav", "extensions": ["sav"], "size_exact": None, "size_maximum": 256,
-             "address": "0x80000000"}
 ALLOWED = {".json", ".bin", ".rbf_r", ".txt"}
 INTERACT_MAX = 11547     # bytes: the largest interact.json seen to load on a Pocket; 12,465 did not
 README_CD = """Neo Geo CD core for the Analogue Pocket, built from the MiSTer Neo Geo core.
@@ -79,17 +72,6 @@ def members(rev, version):
             j["core"]["metadata"]["shortname"] = name
             if description:
                 j["core"]["metadata"]["description"] = description
-            data = json.dumps(j, indent=4)
-        wait_counter = "NEOGEO_WAIT_COUNTER" in (ROOT / f"synth/{rev}/{rev}.qsf").read_text()
-        if p.name == "data.json" and wait_counter:
-            j = json.loads(data)
-            # The file is 8 records of 512 bytes, as the core's slot write and rtl/pocket/apf_loader.sv's table word. A new name: the host keeps an old file's size
-            j["data"]["data_slots"].append({**WAIT_SLOT, "size_maximum": 8192, "filename": "waitt.sav"})
-            data = json.dumps(j, indent=4)
-        if p.name == "interact.json" and platform == "ngcd" and not wait_counter:
-            # The debug item. Without the counter the lid stays closed
-            j = json.loads(data)
-            j["interact"]["variables"] = [v for v in j["interact"]["variables"] if v["name"] != "Lid open (debug)"]
             data = json.dumps(j, indent=4)
         if p.name == "interact.json":
             # The Pocket (firmware 2.7) stops with "Load error in interact: General error" on a file of 12,465 bytes, and loads the

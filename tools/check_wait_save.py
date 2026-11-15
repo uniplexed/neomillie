@@ -7,7 +7,7 @@
 
 """Read the save file of the wait counter: python tools/check_wait_save.py wait.sav
 
-The debug builds neogeo_debug and neogeocd_debug write it (rtl/test/wait_counter.sv). The CD
+A core built with the 68K wait counter (rtl/test/wait_counter.sv, NEOGEO_WAIT_COUNTER) writes it. The CD
 core from 0.5.1 writes waits.sav, 8 records of layout 3 below, one per run, so one file compares several runs. Prints
 what the memory cost the 68K, split by what CRAM0 was doing when each read's request arrived. Exit code 0 when
 the file is good, whatever the numbers. --selftest runs the checks on made-up files.
@@ -89,7 +89,7 @@ def settings_lines(r):
              f"CD/CDZ (SYSTEM_CDZ, taken only in a reset): {'on' if cdz else 'off'}",
              f"FF011C bit 12 (CD_LID) as the BIOS reads it: {lid}, which a top or front loader BIOS takes as tray {tray[0]}, "
              f"and a CDZ BIOS as tray {tray[1]}",
-             f"CD Speed (cd_speed): {speed + 1}x; Region (CD_REGION): {REGION[region]}; Lid open (debug, status[15]): {'on' if lid_dbg else 'off'}",
+             f"CD Speed (cd_speed): {speed + 1}x; Region (CD_REGION): {REGION[region]}; Lid held open (status[15]): {'on' if lid_dbg else 'off'}",
              f"UniBIOS SYSTEM setting: {bios_model(s)}",
              f"resets: {r[33] >> 24} (modulo 256), counting the first start; the last ended at frame {r[33] & 0xFFFFFF}"]
     if in_reset:
@@ -879,7 +879,7 @@ def selftest():
     text = "\n".join(lines)
     assert "CD/CDZ (SYSTEM_CDZ, taken only in a reset): on" in text, lines
     assert "as the BIOS reads it: 0, which a top or front loader BIOS takes as tray open, and a CDZ BIOS as tray closed" in text, lines
-    assert "CD Speed (cd_speed): 4x; Region (CD_REGION): JP; Lid open (debug, status[15]): off" in text, lines
+    assert "CD Speed (cd_speed): 4x; Region (CD_REGION): JP; Lid held open (status[15]): off" in text, lines
     assert "resets: 2 (modulo 256), counting the first start; the last ended at frame 35000" in text, lines
     assert "held in reset" not in text, lines
     assert lines.index(next(l for l in lines if "004000" in l)) < lines.index(next(l for l in lines if "002000" in l)), lines    # oldest first

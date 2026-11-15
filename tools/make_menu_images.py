@@ -22,7 +22,6 @@ GROUPS = {      # an item not named here is a system setting
     "Audio": ("Stereo Mix", "Mute", "ADPCM-A Channel"),
     "Controls": ("L/R Buttons",),
 }
-DEBUG_ONLY = ("Lid open (debug)",)      # tools/package.py leaves it out of the release
 W, ROW, HEAD, PAD = 560, 26, 30, 22
 
 
@@ -41,8 +40,7 @@ def value_of(v):
 
 
 def draw(core, title):
-    items = [v for v in json.loads((ROOT / "pocket" / core / "interact.json").read_text())["interact"]["variables"]
-             if v["name"] not in DEBUG_ONLY]
+    items = json.loads((ROOT / "pocket" / core / "interact.json").read_text())["interact"]["variables"]
     rows, y, last = [], 64, None
     for n, v in enumerate(items, 1):
         g = group_of(v["name"])

@@ -1,4 +1,4 @@
-# Neo Geo CD core for the Analogue Pocket: what neogeocd and neogeocd_debug share.
+# Neo Geo CD core for the Analogue Pocket: what every build of the core shares.
 # The cartridge core's files, with NEOGEO_CD, MiSTer's CD files and the Pocket's CD host.
 
 source ../neogeo_core.qsf
