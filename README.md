@@ -2,6 +2,10 @@
 
 # NeoMillie
 
+<p align="center"><a href="https://www.paypal.com/donate/?hosted_button_id=A72RAVHX98628"><img src="https://img.shields.io/badge/Donate-PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white" alt="Donate with PayPal"></a></p>
+
+<p align="center"><b>NeoMillie is free.</b> If it is useful to you, <a href="#supporting-the-project">a donation</a> helps keep it going.</p>
+
 NeoMillie is an FPGA core for the Analogue Pocket that lets you play Neo Geo games. It is ported from the current Neo Geo
 RTL of the MiSTer project, with a new hardware layer for the Pocket. It comes as two cores: NeoMillie plays cartridge games
 as an AES console or an MVS arcade board, and NeoMillieCD plays Neo Geo CD discs.
